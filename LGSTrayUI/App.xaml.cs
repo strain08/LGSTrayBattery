@@ -13,6 +13,7 @@ using Tommy.Extensions.Configuration;
 
 using static LGSTrayUI.AppExtensions;
 using System.Threading.Tasks;
+using System.Linq;
 
 namespace LGSTrayUI;
 
@@ -31,6 +32,12 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += new UnhandledExceptionEventHandler(CrashHandler);
 
         EnableEfficiencyMode();
+        if (e.Args.Length > 0 && e.Args.Contains("--log"))
+        {
+            DiagnosticLogger.Enable=true;
+            DiagnosticLogger.ResetLog();
+        }
+        
 
         var builder = Host.CreateEmptyApplicationBuilder(null);
         await LoadAppSettings(builder.Configuration);

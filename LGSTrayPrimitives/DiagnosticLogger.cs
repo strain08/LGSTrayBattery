@@ -12,6 +12,8 @@ public static class DiagnosticLogger
     private static readonly object _lock = new object();
     private static readonly string _logFilePath = Path.Combine(AppContext.BaseDirectory, "diagnostic.log");
 
+    public static bool Enable { get; set; } = false;
+
     /// <summary>
     /// Log an informational message with timestamp.
     /// </summary>
@@ -47,6 +49,8 @@ public static class DiagnosticLogger
 
     private static void WriteToFile(string message)
     {
+        if (!Enable) return;
+
         try
         {
             lock (_lock)
@@ -58,5 +62,10 @@ public static class DiagnosticLogger
         {
             // Silently fail if we can't write to log file
         }
+    }
+
+    public static void ResetLog()
+    {    
+        File.WriteAllText(_logFilePath, string.Empty);
     }
 }
