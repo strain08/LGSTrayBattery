@@ -15,6 +15,7 @@ namespace LGSTrayHID
 {
     public class HidppDevice
     {
+        private const int INIT_PING_TIMEOUT = 5000;
         private readonly SemaphoreSlim _initSemaphore = new(1, 1);
         private Func<HidppDevice, Task<BatteryUpdateReturn?>>? _getBatteryAsync;
 
@@ -68,7 +69,7 @@ namespace LGSTrayHID
                     DiagnosticLogger.Log($"Starting ping test for HID device index {_deviceIdx}");
                     for (int i = 0; i < 10; i++)
                     {
-                        var ping = await _parent.Ping20(_deviceIdx, 100);
+                        var ping = await _parent.Ping20(_deviceIdx, INIT_PING_TIMEOUT);
                         if (ping)
                         {
                             successCount++;

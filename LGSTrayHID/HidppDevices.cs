@@ -20,6 +20,8 @@ namespace LGSTrayHID
 
         private bool _isReading = true;
         private const int READ_TIMEOUT = 100;
+        private const int TASK_DELAY = 2000;
+        private const int PING_ENUMERATE_DELAY = 5000;
 
         private readonly Dictionary<ushort, HidppDevice> _deviceCollection = [];
         public IReadOnlyDictionary<ushort, HidppDevice> DeviceCollection => _deviceCollection;
@@ -307,7 +309,7 @@ namespace LGSTrayHID
             t2.Start();
 
             byte[] ret;
-
+            
             // Read number of devices on reciever
             ret = await WriteRead10(_devShort, [0x10, 0xFF, 0x81, 0x02, 0x00, 0x00, 0x00], 1000);
             byte numDeviceFound = 0;
@@ -322,14 +324,14 @@ namespace LGSTrayHID
                 ret = await WriteRead10(_devShort, [0x10, 0xFF, 0x80, 0x02, 0x02, 0x00, 0x00], 1000);
             }
 
-            await Task.Delay(500);
+            await Task.Delay(TASK_DELAY);
 
             if (_deviceCollection.Count == 0)
             {
                 // Fail to enumerate devices
                 for (byte i = 1; i <= 6; i++)
                 {
-                    var ping = await Ping20(i, 100, false);
+                    var ping = await Ping20(i, PING_ENUMERATE_DELAY, false);
                     if (ping)
                     {
                         var deviceIdx = i;
