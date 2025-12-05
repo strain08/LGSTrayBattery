@@ -5,10 +5,11 @@ namespace LGSTrayHID.Features
 {
     public static class Battery1004
     {
+        private const int WR_TIMEOUT=1000;
         public static async Task<BatteryUpdateReturn?> GetBatteryAsync(HidppDevice device)
         {
             Hidpp20 buffer = new byte[7] { 0x10, device.DeviceIdx, device.FeatureMap[0x1004], 0x10 | HidppDevices.SW_ID, 0x00, 0x00, 0x00 };
-            Hidpp20 ret = await device.Parent.WriteRead20(device.Parent.DevShort, buffer);
+            Hidpp20 ret = await device.Parent.WriteRead20(device.Parent.DevShort, buffer, timeout: WR_TIMEOUT);
 
             if (ret.Length == 0) { return null; }
 
