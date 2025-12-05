@@ -1,19 +1,19 @@
 ﻿using LGSTrayCore;
 using LGSTrayCore.Managers;
+using LGSTrayPrimitives;
+using LGSTrayPrimitives.IPC;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using System.Windows;
+using Notification.Wpf;
 using System;
-using LGSTrayPrimitives.IPC;
 using System.Globalization;
 using System.IO;
-using System.Threading;
-using LGSTrayPrimitives;
-using Tommy.Extensions.Configuration;
-
-using static LGSTrayUI.AppExtensions;
-using System.Threading.Tasks;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows;
+using Tommy.Extensions.Configuration;
+using static LGSTrayUI.AppExtensions;
 
 namespace LGSTrayUI;
 
@@ -41,10 +41,12 @@ public partial class App : Application
 
         var builder = Host.CreateEmptyApplicationBuilder(null);
         await LoadAppSettings(builder.Configuration);
+        
 
         builder.Services.Configure<AppSettings>(builder.Configuration);
         builder.Services.AddLGSMessagePipe(true);
         builder.Services.AddSingleton<UserSettingsWrapper>();
+        builder.Services.AddSingleton<INotificationManager, NotificationManager>();
 
         builder.Services.AddSingleton<LogiDeviceIconFactory>();
         builder.Services.AddSingleton<LogiDeviceViewModelFactory>();
@@ -54,9 +56,11 @@ public partial class App : Application
         builder.Services.AddIDeviceManager<LGSTrayHIDManager>(builder.Configuration);
         builder.Services.AddIDeviceManager<GHubManager>(builder.Configuration);
         builder.Services.AddSingleton<ILogiDeviceCollection, LogiDeviceCollection>();
+        
 
         builder.Services.AddSingleton<MainTaskbarIconWrapper>();
         builder.Services.AddHostedService<NotifyIconViewModel>();
+        builder.Services.AddHostedService<NotificationService>();
 
         var host = builder.Build();
         await host.RunAsync();

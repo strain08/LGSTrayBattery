@@ -40,6 +40,7 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="Notification.Wpf" Version="8.0.0" />
     <PackageReference Include="System.Diagnostics.EventLog" Version="10.0.0" />
     <PackageReference Include="System.Management" Version="10.0.0" />
     <PackageReference Include="Tommy.Extensions.Configuration" Version="6.2.0" />

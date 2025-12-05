@@ -9,6 +9,8 @@ public class AppSettings
     public IDeviceManagerSettings GHub { get; set; } = null!;
 
     public NativeDeviceManagerSettings Native { get; set; } = null!;
+
+    public NotificationSettings Notifications { get; set; } = null!;
 }
 
 public class UISettings
@@ -44,4 +46,12 @@ public class NativeDeviceManagerSettings : IDeviceManagerSettings
     public int PollPeriod { get; set; } = 600;
 
     public IEnumerable<string> DisabledDevices { get; set; } = [];
+}
+
+public class NotificationSettings
+{
+    public bool NotifyOnBatteryLow { get; set; } = true;
+    public int BatteryLowThreshold { get; set; } = 30;
+    public bool NotifyOnBatteryHigh { get; set; } = true;
+    public int BatteryHighThreshold { get; set; } = 80;
 }

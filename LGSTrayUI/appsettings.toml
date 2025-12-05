@@ -22,3 +22,17 @@ pollPeriod = 600
 # List of disabled devices
 disabledDevices = [
 ]
+
+[Notifications]
+# Enable/disable low battery notifications
+notifyOnBatteryLow = true
+
+# Battery percentage threshold for low battery warnings
+# Additional warnings will be shown at 10% and 5%
+batteryLowThreshold = 30
+
+# Enable/disable battery charged notifications
+notifyOnBatteryHigh = true
+
+# Battery percentage threshold for "charged" notification
+batteryHighThreshold = 80

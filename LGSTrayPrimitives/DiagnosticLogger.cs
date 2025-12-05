@@ -22,8 +22,9 @@ public static class DiagnosticLogger
         string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
         string formatted = $"[{timestamp}] LGSTray: {message}";
         WriteToFile(formatted);
-        Debug.WriteLine(formatted);
+        WriteToConsole(formatted);
     }
+
 
     /// <summary>
     /// Log a warning message with timestamp.
@@ -33,7 +34,7 @@ public static class DiagnosticLogger
         string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
         string formatted = $"[{timestamp}] LGSTray WARNING: {message}";
         WriteToFile(formatted);
-        Debug.WriteLine(formatted);
+        WriteToConsole(formatted);
     }
 
     /// <summary>
@@ -44,7 +45,7 @@ public static class DiagnosticLogger
         string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
         string formatted = $"[{timestamp}] LGSTray ERROR: {message}";
         WriteToFile(formatted);
-        Debug.WriteLine(formatted);
+        WriteToConsole(formatted);
     }
 
     private static void WriteToFile(string message)
@@ -63,6 +64,13 @@ public static class DiagnosticLogger
             // Silently fail if we can't write to log file
         }
     }
+    private static void WriteToConsole(string formatted)
+    {
+#if DEBUG
+        Console.WriteLine(formatted);
+#endif
+    }
+
 
     public static void ResetLog()
     {    
