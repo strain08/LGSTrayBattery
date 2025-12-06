@@ -54,7 +54,7 @@ namespace LGSTrayHID
 
         private async Task<int> InitDevice(HidDeviceInfo deviceInfo)
         {
-            var messageType = (deviceInfo).GetHidppMessageType();
+            var messageType = deviceInfo.GetHidppMessageType();
             switch (messageType)
             {
                 case HidppMessageType.NONE:

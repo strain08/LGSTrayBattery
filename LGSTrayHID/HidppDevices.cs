@@ -1,4 +1,5 @@
 ﻿using LGSTrayHID.HidApi;
+using LGSTrayHID.Protocol;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -122,7 +123,8 @@ namespace LGSTrayHID
 
         private async Task ProcessMessgage(byte[] buffer)
         {
-            if ((buffer[2] == 0x41) && ((buffer[4] & 0x40) == 0))
+            Hidpp20 message = buffer;
+            if (message.IsDeviceAnnouncement() && ((buffer[4] & 0x40) == 0))
             {
                 byte deviceIdx = buffer[1];
                 if (true || !_deviceCollection.ContainsKey(deviceIdx))
@@ -209,7 +211,7 @@ namespace LGSTrayHID
                     {
                         ret = await _channel.Reader.ReadAsync(cts.Token);
 
-                        if (!ignoreHID10 && (ret.GetFeatureIndex() == 0x8F))
+                        if (!ignoreHID10 && ret.IsError())
                         {
                             // HID++ 1.0 response or timeout
                             break;
@@ -236,8 +238,8 @@ namespace LGSTrayHID
             ObjectDisposedException.ThrowIf(_disposeCount > 0, this);
 
             byte pingPayload = ++PING_PAYLOAD;
-            Hidpp20 buffer = new byte[7] { 0x10, deviceId, 0x00, 0x10 | SW_ID, 0x00, 0x00, pingPayload };
-            Hidpp20 ret = await WriteRead20(_devShort, buffer, timeout, ignoreHIDPP10);
+            Hidpp20 command = Hidpp20Commands.Ping(deviceId, pingPayload);
+            Hidpp20 ret = await WriteRead20(_devShort, command, timeout, ignoreHIDPP10);
             if (ret.Length == 0)
             {
                 return false;
@@ -313,19 +315,19 @@ namespace LGSTrayHID
             t2.Start();
 
             byte[] ret;
-            
-            // Read number of devices on reciever
-            ret = await WriteRead10(_devShort, [0x10, 0xFF, 0x81, 0x02, 0x00, 0x00, 0x00], 1000);
+
+            // Query receiver for number of connected devices
+            ret = await WriteRead10(_devShort, Hidpp10Commands.QueryDeviceCount(), 1000);
             byte numDeviceFound = 0;
-            if ((ret[2] == 0x81) && (ret[3] == 0x02))
+            if ((ret[2] == ReceiverCommand.QUERY_DEVICE_COUNT) && (ret[3] == ReceiverCommand.SUB_COMMAND))
             {
                 numDeviceFound = ret[5];
             }
 
             if (numDeviceFound > 0)
             {
-                // Force arrival announce
-                ret = await WriteRead10(_devShort, [0x10, 0xFF, 0x80, 0x02, 0x02, 0x00, 0x00], 1000);
+                // Force connected devices to announce themselves
+                ret = await WriteRead10(_devShort, Hidpp10Commands.ForceDeviceAnnounce(), 1000);
             }
 
             await Task.Delay(TASK_DELAY);

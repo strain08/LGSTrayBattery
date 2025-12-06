@@ -124,7 +124,7 @@ namespace LGSTrayHID.Protocol
             return Hidpp20CommandBuilder.Create(deviceIndex)
                 .WithFeatureIndex(0x00)  // Root feature - function 0x00 finds feature indices
                 .WithFunction(FeatureSetFunction.GET_COUNT)
-                .WithParams(0x00, (byte)(featureId >> 8), (byte)(featureId & 0xFF))
+                .WithParams(0x00, (byte)(featureId & 0xFF), (byte)(featureId >> 8))  // Little-endian: low byte first!
                 .Build();
         }
 

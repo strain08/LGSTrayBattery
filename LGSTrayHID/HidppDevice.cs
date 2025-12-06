@@ -1,6 +1,7 @@
 ﻿using LGSTrayPrimitives;
 using LGSTrayPrimitives.MessageStructs;
 using LGSTrayHID.Features;
+using LGSTrayHID.Protocol;
 using System.Text;
 
 using static LGSTrayHID.HidppDevices;
@@ -16,9 +17,6 @@ namespace LGSTrayHID
     public class HidppDevice
     {
         private const int INIT_PING_TIMEOUT = 5000;
-        // hidpp constants
-        private const int DEVICE_NAME = 0x0005;
-        private const int DEVICE_FW_VERSION = 0x0003;
 
         private readonly SemaphoreSlim _initSemaphore = new(1, 1);
         private IBatteryFeature? _batteryFeature;
@@ -100,19 +98,22 @@ namespace LGSTrayHID
 
                 DiagnosticLogger.Log($"HID device index {_deviceIdx} passed ping test");
 
-                // Find 0x0001 IFeatureSet
-                ret = await _parent.WriteRead20(_parent.DevShort, new byte[7] { 0x10, _deviceIdx, 0x00, 0x00 | SW_ID, 0x00, 0x01, 0x00 });
-                _featureMap[0x0001] = ret.GetParam(0);
+                // Find IFeatureSet (0x0001) - get its feature index
+                ret = await _parent.WriteRead20(_parent.DevShort,
+                    Hidpp20Commands.GetFeatureIndex(_deviceIdx, HidppFeature.FEATURE_SET));
+                _featureMap[HidppFeature.FEATURE_SET] = ret.GetParam(0);
 
                 // Get Feature Count
-                ret = await _parent.WriteRead20(_parent.DevShort, new byte[7] { 0x10, _deviceIdx, _featureMap[0x0001], 0x00 | SW_ID, 0x00, 0x00, 0x00 });
+                ret = await _parent.WriteRead20(_parent.DevShort,
+                    Hidpp20Commands.GetFeatureCount(_deviceIdx, _featureMap[HidppFeature.FEATURE_SET]));
                 int featureCount = ret.GetParam(0);
-                
+
                 // Enumerate Features
                 for (byte i = 0; i <= featureCount; i++)
                 {
-                    ret = await _parent.WriteRead20(_parent.DevShort, new byte[7] { 0x10, _deviceIdx, _featureMap[0x0001], 0x10 | SW_ID, i, 0x00, 0x00 });
-                    ushort featureId = (ushort)((ret.GetParam(0) << 8) + ret.GetParam(1));
+                    ret = await _parent.WriteRead20(_parent.DevShort,
+                        Hidpp20Commands.EnumerateFeature(_deviceIdx, _featureMap[HidppFeature.FEATURE_SET], i));
+                    ushort featureId = ret.GetFeatureId();
 
                     _featureMap[featureId] = i;
                 }
@@ -134,21 +135,26 @@ namespace LGSTrayHID
             DiagnosticLogger.Log($"Enumerating features for HID device index {_deviceIdx}");
 
             // Device name
-            if (_featureMap.TryGetValue(DEVICE_NAME, out featureId))
+            if (_featureMap.TryGetValue(HidppFeature.DEVICE_NAME, out featureId))
             {
-                ret = await _parent.WriteRead20(_parent.DevShort, new byte[7] { 0x10, _deviceIdx, featureId, 0x00 | SW_ID, 0x00, 0x00, 0x00 });
+                // Get device name length
+                ret = await _parent.WriteRead20(_parent.DevShort,
+                    Hidpp20Commands.GetDeviceNameLength(_deviceIdx, featureId));
                 int nameLength = ret.GetParam(0);
 
                 string name = "";
 
+                // Read name in chunks (3 bytes at a time)
                 while (name.Length < nameLength)
                 {
-                    ret = await _parent.WriteRead20(_parent.DevShort, new byte[7] { 0x10, _deviceIdx, featureId, 0x10 | SW_ID, (byte)name.Length, 0x00, 0x00 });
+                    ret = await _parent.WriteRead20(_parent.DevShort,
+                        Hidpp20Commands.GetDeviceNameChunk(_deviceIdx, featureId, (byte)name.Length));
                     name += Encoding.UTF8.GetString(ret.GetParams());
                 }
 
                 DeviceName = name.TrimEnd('\0');
 
+                // Check if device is filtered in settings
                 foreach (var tag in GlobalSettings.settings.DisabledDevices)
                 {
                     if (DeviceName.Contains(tag))
@@ -158,7 +164,9 @@ namespace LGSTrayHID
                     }
                 };
 
-                ret = await _parent.WriteRead20(_parent.DevShort, new byte[7] { 0x10, _deviceIdx, featureId, 0x20 | SW_ID, 0x00, 0x00, 0x00 });
+                // Get device type
+                ret = await _parent.WriteRead20(_parent.DevShort,
+                    Hidpp20Commands.GetDeviceType(_deviceIdx, featureId));
                 DeviceType = ret.GetParam(0);
             }
             else
@@ -168,9 +176,11 @@ namespace LGSTrayHID
                 return;
             }
 
-            if (_featureMap.TryGetValue(DEVICE_FW_VERSION, out featureId))
+            if (_featureMap.TryGetValue(HidppFeature.DEVICE_FW_INFO, out featureId))
             {
-                ret = await _parent.WriteRead20(_parent.DevShort, new byte[7] { 0x10, _deviceIdx, featureId, 0x00 | SW_ID, 0x00, 0x00, 0x00 });
+                // Get device firmware info (unit ID, model ID, serial support flag)
+                ret = await _parent.WriteRead20(_parent.DevShort,
+                    Hidpp20Commands.GetDeviceFwInfo(_deviceIdx, featureId));
 
                 string unitId = BitConverter.ToString(ret.GetParams().ToArray(), 1, 4).Replace("-", string.Empty);
                 string modelId = BitConverter.ToString(ret.GetParams().ToArray(), 7, 5).Replace("-", string.Empty);
@@ -179,7 +189,9 @@ namespace LGSTrayHID
                 string? serialNumber = null;
                 if (serialNumberSupported)
                 {
-                    ret = await _parent.WriteRead20(_parent.DevShort, new byte[7] { 0x10, _deviceIdx, featureId, 0x20 | SW_ID, 0x00, 0x00, 0x00 });
+                    // Get device serial number
+                    ret = await _parent.WriteRead20(_parent.DevShort,
+                        Hidpp20Commands.GetSerialNumber(_deviceIdx, featureId));
                     serialNumber = BitConverter.ToString(ret.GetParams().ToArray(), 0, 11).Replace("-", string.Empty);
                 }
 
