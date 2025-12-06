@@ -21,7 +21,7 @@ namespace LGSTrayHID
         private const int DEVICE_FW_VERSION = 0x0003;
 
         private readonly SemaphoreSlim _initSemaphore = new(1, 1);
-        private Func<HidppDevice, Task<BatteryUpdateReturn?>>? _getBatteryAsync;
+        private IBatteryFeature? _batteryFeature;
 
         public string DeviceName { get; private set; } = string.Empty;
         public int DeviceType { get; private set; } = 3;
@@ -210,17 +210,12 @@ namespace LGSTrayHID
             Log.WriteLine("---");
 #endif
 
-            _getBatteryAsync = FeatureMap switch
-            {
-                { } when FeatureMap.ContainsKey(0x1000) => Battery1000.GetBatteryAsync,
-                { } when FeatureMap.ContainsKey(0x1001) => Battery1001.GetBatteryAsync,
-                { } when FeatureMap.ContainsKey(0x1004) => Battery1004.GetBatteryAsync,
-                _ => null
-            };
+            // Select battery feature using factory pattern
+            _batteryFeature = BatteryFeatureFactory.GetBatteryFeature(FeatureMap);
 
             HidppManagerContext.Instance.SignalDeviceEvent(
                 IPCMessageType.INIT,
-                new InitMessage(Identifier, DeviceName, _getBatteryAsync != null, (DeviceType)DeviceType)
+                new InitMessage(Identifier, DeviceName, _batteryFeature != null, (DeviceType)DeviceType)
             );
 
             DiagnosticLogger.Log($"HID device registered - {Identifier} ({DeviceName})");
@@ -229,7 +224,7 @@ namespace LGSTrayHID
 
             _ = Task.Run(async () =>
             {
-                if (_getBatteryAsync == null) { return; }
+                if (_batteryFeature == null) { return; }
 
                 while (true)
                 {
@@ -257,12 +252,12 @@ namespace LGSTrayHID
                 DiagnosticLogger.Log($"[{DeviceName}] Parent disposed, skipping battery update.");
                 return; 
             }
-            if (_getBatteryAsync == null) { 
+            if (_batteryFeature == null) {
                 DiagnosticLogger.Log($"[{DeviceName}] No battery feature available, skipping battery update.");
-                return; 
+                return;
             }
 
-            var ret = await _getBatteryAsync.Invoke(this);
+            var ret = await _batteryFeature.GetBatteryAsync(this);
 
             if (ret == null) { 
                 DiagnosticLogger.Log($"[{DeviceName}] Battery update returned null, skipping.");

@@ -57,7 +57,7 @@ namespace LGSTrayHID.Protocol
         public const byte GET_COUNT = 0x00;
 
         /// <summary>Get feature ID at given index</summary>
-        public const byte GET_FEATURE_ID = 0x10;
+        public const byte GET_FEATURE_ID = 0x01;  // Function nibble value, not 0x10!
     }
 
     /// <summary>
@@ -69,10 +69,10 @@ namespace LGSTrayHID.Protocol
         public const byte GET_NAME_LENGTH = 0x00;
 
         /// <summary>Get device name chunk (3 bytes at a time)</summary>
-        public const byte GET_NAME_CHUNK = 0x10;
+        public const byte GET_NAME_CHUNK = 0x01;  // Function nibble value, not 0x10!
 
         /// <summary>Get device type (keyboard, mouse, headset, etc.)</summary>
-        public const byte GET_DEVICE_TYPE = 0x20;
+        public const byte GET_DEVICE_TYPE = 0x02;  // Function nibble value, not 0x20!
     }
 
     /// <summary>
@@ -84,7 +84,7 @@ namespace LGSTrayHID.Protocol
         public const byte GET_FW_INFO = 0x00;
 
         /// <summary>Get device serial number (if supported)</summary>
-        public const byte GET_SERIAL_NUMBER = 0x20;
+        public const byte GET_SERIAL_NUMBER = 0x02;  // Function nibble value, not 0x20!
     }
 
     /// <summary>
@@ -93,7 +93,7 @@ namespace LGSTrayHID.Protocol
     public static class RootFunction
     {
         /// <summary>Ping command - used to test device responsiveness</summary>
-        public const byte PING = 0x10;
+        public const byte PING = 0x01;  // Function nibble value, not 0x10!
     }
 
     /// <summary>
@@ -105,7 +105,7 @@ namespace LGSTrayHID.Protocol
         public const byte GET_STATUS = 0x00;
 
         /// <summary>Get battery capability (used by feature 0x1004)</summary>
-        public const byte GET_CAPABILITY = 0x10;
+        public const byte GET_CAPABILITY = 0x01;  // Function nibble value, not 0x10!
     }
 
     /// <summary>
