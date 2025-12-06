@@ -37,7 +37,11 @@ public partial class App : Application
             DiagnosticLogger.Enable=true;
             DiagnosticLogger.ResetLog();
         }
-        
+
+#if DEBUG
+        DiagnosticLogger.Enable = true;
+        DiagnosticLogger.ResetLog();
+#endif
 
         var builder = Host.CreateEmptyApplicationBuilder(null);
         await LoadAppSettings(builder.Configuration);
