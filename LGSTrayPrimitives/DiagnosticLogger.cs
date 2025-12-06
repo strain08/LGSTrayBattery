@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace LGSTrayPrimitives;
 
@@ -12,15 +13,15 @@ public static class DiagnosticLogger
     private static readonly object _lock = new object();
     private static readonly string _logFilePath = Path.Combine(AppContext.BaseDirectory, "diagnostic.log");
 
-    public static bool Enable { get; set; } = false;
+    public static bool Enable { get; set; } = true;
 
     /// <summary>
     /// Log an informational message with timestamp.
     /// </summary>
-    public static void Log(string message)
+    public static void Log(string message, [CallerMemberName] string callerMember = "")
     {
         string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
-        string formatted = $"[{timestamp}] LGSTray: {message}";
+        string formatted = $"[{timestamp}] [{callerMember}]: {message}";
         WriteToFile(formatted);
         WriteToConsole(formatted);
     }
@@ -29,7 +30,7 @@ public static class DiagnosticLogger
     /// <summary>
     /// Log a warning message with timestamp.
     /// </summary>
-    public static void LogWarning(string message)
+    public static void LogWarning(string message, [CallerMemberName] string callerMember = "")
     {
         string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
         string formatted = $"[{timestamp}] LGSTray WARNING: {message}";
@@ -40,7 +41,7 @@ public static class DiagnosticLogger
     /// <summary>
     /// Log an error message with timestamp.
     /// </summary>
-    public static void LogError(string message)
+    public static void LogError(string message, [CallerMemberName] string callerMember = "")
     {
         string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
         string formatted = $"[{timestamp}] LGSTray ERROR: {message}";
@@ -61,7 +62,7 @@ public static class DiagnosticLogger
         }
         catch
         {
-            // Silently fail if we can't write to log file
+            Console.WriteLine("Failed to write to diagnostic log file.");
         }
     }
     private static void WriteToConsole(string formatted)
