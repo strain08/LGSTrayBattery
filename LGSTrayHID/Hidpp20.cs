@@ -46,5 +46,79 @@
         {
             return _data[4 + paramIdx];
         }
+
+        // ========== Phase 2: Response Parsing Helpers ==========
+
+        /// <summary>
+        /// Check if this response is a HID++ error response.
+        /// Error responses have feature index 0x8F.
+        /// </summary>
+        /// <returns>True if this is an error response</returns>
+        public bool IsError()
+        {
+            return GetFeatureIndex() == Protocol.HidppResponse.ERROR;
+        }
+
+        /// <summary>
+        /// Check if this is a device announcement message (hotplug arrival).
+        /// Device announcements have feature index 0x41.
+        /// </summary>
+        /// <returns>True if this is a device announcement</returns>
+        public bool IsDeviceAnnouncement()
+        {
+            return GetFeatureIndex() == Protocol.HidppResponse.DEVICE_ANNOUNCEMENT;
+        }
+
+        /// <summary>
+        /// Get the error code from an error response.
+        /// Only valid if IsError() returns true.
+        /// </summary>
+        /// <returns>Error code byte</returns>
+        /// <exception cref="InvalidOperationException">Thrown if this is not an error response</exception>
+        public byte GetErrorCode()
+        {
+            if (!IsError())
+            {
+                throw new InvalidOperationException("Cannot get error code from non-error response");
+            }
+            return GetParam(0);
+        }
+
+        /// <summary>
+        /// Parse a 16-bit parameter from two consecutive bytes (big-endian).
+        /// Commonly used for feature IDs and other multi-byte values.
+        /// </summary>
+        /// <param name="offset">Parameter offset (0-2)</param>
+        /// <returns>16-bit unsigned value</returns>
+        /// <example>
+        /// // Instead of: ushort featureId = (ushort)((ret.GetParam(0) << 8) + ret.GetParam(1));
+        /// // Use: ushort featureId = ret.GetParam16(0);
+        /// </example>
+        public ushort GetParam16(int offset)
+        {
+            return (ushort)((GetParam(offset) << 8) | GetParam(offset + 1));
+        }
+
+        /// <summary>
+        /// Get the feature ID from a feature enumeration response.
+        /// This is a convenience method that calls GetParam16(0).
+        /// </summary>
+        /// <returns>Feature ID as 16-bit unsigned value</returns>
+        public ushort GetFeatureId()
+        {
+            return GetParam16(0);
+        }
+
+        /// <summary>
+        /// Check if this response matches the given request.
+        /// Matching is based on feature index and software ID.
+        /// </summary>
+        /// <param name="request">The original request command</param>
+        /// <returns>True if the response matches the request</returns>
+        public bool MatchesRequest(Hidpp20 request)
+        {
+            return GetFeatureIndex() == request.GetFeatureIndex()
+                && GetSoftwareId() == request.GetSoftwareId();
+        }
     }
 }
