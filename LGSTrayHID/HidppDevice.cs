@@ -33,6 +33,9 @@ namespace LGSTrayHID
         private DateTimeOffset _lastEventTime = DateTimeOffset.MinValue;
         private const int EVENT_THROTTLE_MS = 500; // Prevent event spam
 
+        // Wireless device status event tracking (0x1D4B - BOLT receivers)
+        private byte _wirelessStatusFeatureIndex = 0xFF; // 0xFF = not set
+
         private readonly HidppDevices _parent;
         public HidppDevices Parent => _parent;
 
@@ -121,6 +124,11 @@ namespace LGSTrayHID
                     ushort featureId = ret.GetFeatureId();
 
                     _featureMap[featureId] = i;
+
+                    #if DEBUG
+                    // Log feature mapping for debugging connection events
+                    DiagnosticLogger.Log($"[Device {_deviceIdx}] Feature 0x{featureId:X04} mapped to index {i}");
+                    #endif
                 }
 
                 await InitPopulateAsync();
@@ -238,6 +246,14 @@ namespace LGSTrayHID
                 DiagnosticLogger.LogWarning($"[{DeviceName}] No battery feature found.");
             }
 
+            // Check for wireless device status feature (0x1D4B - BOLT receivers)
+            if (FeatureMap.ContainsKey(HidppFeature.WIRELESS_DEVICE_STATUS))
+            {
+                _wirelessStatusFeatureIndex = FeatureMap[HidppFeature.WIRELESS_DEVICE_STATUS];
+                DiagnosticLogger.Log($"[{DeviceName}] Wireless device status feature (0x1D4B) found at index {_wirelessStatusFeatureIndex}");
+                // Note: Events are automatically enabled by the battery enable command (HID++ 1.0 register 0x00)
+            }
+
             HidppManagerContext.Instance.SignalDeviceEvent(
                 IPCMessageType.INIT,
                 new InitMessage(Identifier, DeviceName, _batteryFeature != null, (DeviceType)DeviceType)
@@ -246,10 +262,11 @@ namespace LGSTrayHID
             DiagnosticLogger.Log($"HID device registered - {Identifier} ({DeviceName})");
 
             await Task.Delay(1000);
+            if (_batteryFeature == null) { return; }
 
             _ = Task.Run(async () =>
             {
-                if (_batteryFeature == null) { return; }
+               
 
                 while (true)
                 {
@@ -364,6 +381,48 @@ namespace LGSTrayHID
             );
 
             return true; // Event handled successfully
+        }
+
+        /// <summary>
+        /// Attempt to handle a message as a wireless device status event (0x1D4B).
+        /// This is used by BOLT receivers to report connection/disconnection events.
+        /// Returns true if the message was a wireless status event and was handled.
+        /// </summary>
+        /// <param name="message">The HID++ message to check</param>
+        /// <returns>True if this was a wireless status event and was handled, false otherwise</returns>
+        public bool TryHandleWirelessStatusEvent(Hidpp20 message)
+        {
+            // Check if we have wireless status feature configured
+            if (_wirelessStatusFeatureIndex == 0xFF)
+            {
+                return false;
+            }
+
+            // Check if this message is a wireless status event
+            // Feature index should match and function should be 0x00 (status broadcast)
+            if (message.GetFeatureIndex() != _wirelessStatusFeatureIndex ||
+                message.GetFunctionId() != WirelessDeviceStatusEvent.STATUS_BROADCAST)
+            {
+                return false;
+            }
+
+            // Parse event parameters from your device logs
+            // Message: 11 02 04 00 01 01 01
+            // Byte 4 (param 0): 0x01
+            // Byte 5 (param 1): 0x01
+            // Byte 6 (param 2): 0x01
+            byte param0 = message.GetParam(0);
+            byte param1 = message.GetParam(1);
+            byte param2 = message.GetParam(2);
+
+            // Based on your logs, this event fires when device is turned ON
+            // Status interpretation: param0 = 0x01 appears to indicate connection/wake
+            bool isConnected = (param0 & 0x01) == 1;
+            string state = isConnected ? "CONNECTED/WOKE UP" : "DISCONNECTED/SLEEPING";
+
+            DiagnosticLogger.Log($"Wireless Status Event: {DeviceName} - {state} (Params: 0x{param0:X02} 0x{param1:X02} 0x{param2:X02})");
+
+            return true;
         }
     }
 }

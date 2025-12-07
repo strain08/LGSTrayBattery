@@ -87,5 +87,62 @@ namespace LGSTrayHID.Protocol
                 0x00
             };
         }
+
+        /// <summary>
+        /// Create a command to enable DJ (Device Juggler) notifications from the receiver.
+        /// This activates real-time connection/disconnection events for wireless devices.
+        /// Note: This is a DJ protocol command (0x20) not HID++ (0x10).
+        /// </summary>
+        /// <returns>EnableDJNotifications command (DJ protocol)</returns>
+        /// <remarks>
+        /// DJ notifications include:
+        /// - 0x41: Device paired (connection)
+        /// - 0x40: Device unpaired (disconnection)
+        /// - 0x42: Connection status change (sleep/wake)
+        ///
+        /// Based on Linux kernel hid-logitech-dj.c implementation.
+        /// </remarks>
+        /// <example>
+        /// var command = Hidpp10Commands.EnableDJNotifications();
+        /// await devShort.WriteAsync(command);
+        /// </example>
+        public static byte[] EnableDJNotifications()
+        {
+            return new byte[7]
+            {
+                DJProtocol.REPORT_ID_SHORT,     // 0x20 (DJ SHORT, not HID++ 0x10)
+                HidppDeviceIndex.RECEIVER,      // 0xFF (receiver)
+                0x80,                           // Enable DJ notifications command
+                0x00,                           // Padding
+                0x00,                           // Padding
+                0x00,                           // Padding
+                0x00                            // Padding
+            };
+        }
+
+        /// <summary>
+        /// Create a command to query currently paired devices from the DJ receiver.
+        /// This triggers NOTIF_DEVICE_PAIRED events for all connected devices.
+        /// Should be sent after EnableDJNotifications().
+        /// </summary>
+        /// <returns>QueryPairedDevices command (DJ protocol)</returns>
+        /// <remarks>
+        /// The receiver will respond with a NOTIF_DEVICE_PAIRED (0x41) event
+        /// for each currently paired device, allowing discovery of devices
+        /// that were already connected when the application started.
+        /// </remarks>
+        public static byte[] QueryPairedDevices()
+        {
+            return new byte[7]
+            {
+                DJProtocol.REPORT_ID_SHORT,     // 0x20 (DJ SHORT, not HID++ 0x10)
+                HidppDeviceIndex.RECEIVER,      // 0xFF (receiver)
+                0x81,                           // Query paired devices command
+                0x00,                           // Padding
+                0x00,                           // Padding
+                0x00,                           // Padding
+                0x00                            // Padding
+            };
+        }
     }
 }

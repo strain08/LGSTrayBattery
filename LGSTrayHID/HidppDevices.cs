@@ -115,6 +115,15 @@ namespace LGSTrayHID
                     continue;
                 }
 
+                #if DEBUG
+                // Log ALL messages for debugging (first 7 bytes)
+                string hex = string.Join(" ", buffer.Take(Math.Min(7, ret)).Select(b => $"{b:X02}"));
+                if (buffer[0] != 0x10 || buffer[2] != 0x00) // Skip common ping responses to reduce noise
+                {
+                    LGSTrayPrimitives.DiagnosticLogger.Log($"DEBUG RAW [{bufferSize}b]: {hex}");
+                }
+                #endif
+
                 await ProcessMessage(buffer);
             }
 
@@ -146,10 +155,16 @@ namespace LGSTrayHID
                 return; // Don't send to channel
             }
 
-            // Check if this is a battery event (unsolicited, not a response)
+            // Check if this is a wireless status or battery event (unsolicited, not a response)
             byte deviceIdx = message.GetDeviceIdx();
             if (_deviceCollection.TryGetValue(deviceIdx, out HidppDevice? device))
             {
+                // Try to route as wireless status event (0x1D4B - BOLT receivers)
+                if (device.TryHandleWirelessStatusEvent(message))
+                {
+                    return; // Event handled, don't send to response channel
+                }
+
                 // Try to route as battery event to the device
                 if (await device.TryHandleBatteryEventAsync(message))
                 {
@@ -329,6 +344,10 @@ namespace LGSTrayHID
             t2.Start();
 
             byte[] ret;
+
+            // Note: DJ protocol (0x20/0x21) does not work with BOLT receivers.
+            // BOLT uses HID++ 2.0 Feature 0x1D4B (Wireless Device Status) for connection events.
+            // Events are automatically enabled by the battery enable command (HID++ 1.0 register 0x00).
 
             // Query receiver for number of connected devices
             ret = await WriteRead10(_devShort, Hidpp10Commands.QueryDeviceCount(), 1000);

@@ -88,6 +88,37 @@
         }
 
         /// <summary>
+        /// Check if this is a DJ protocol notification (not HID++ message).
+        /// DJ notifications have report IDs 0x20 or 0x21, while HID++ uses 0x10.
+        /// </summary>
+        /// <returns>True if this is a DJ notification</returns>
+        /// <remarks>
+        /// CRITICAL: Always check IsDJNotification() BEFORE checking IsDeviceAnnouncement()
+        /// to avoid 0x41 disambiguation issues. DJ 0x41 (device paired) vs HID++ 0x41 (announcement).
+        /// </remarks>
+        public bool IsDJNotification()
+        {
+            return _data[0] == Protocol.DJProtocol.REPORT_ID_SHORT
+                || _data[0] == Protocol.DJProtocol.REPORT_ID_LONG;
+        }
+
+        /// <summary>
+        /// Get the DJ notification type (byte[2]) from a DJ notification.
+        /// Only valid if IsDJNotification() returns true.
+        /// </summary>
+        /// <returns>DJ notification type (0x40, 0x41, 0x42)</returns>
+        /// <remarks>
+        /// Common types:
+        /// - 0x40: Device unpaired
+        /// - 0x41: Device paired
+        /// - 0x42: Connection status change
+        /// </remarks>
+        public byte GetDJNotificationType()
+        {
+            return _data[2];
+        }
+
+        /// <summary>
         /// Get the error code from an error response.
         /// Only valid if IsError() returns true.
         /// </summary>

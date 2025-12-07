@@ -45,6 +45,9 @@ namespace LGSTrayHID.Protocol
 
         /// <summary>Unified Battery (0x1004) - Extended battery information</summary>
         public const ushort BATTERY_UNIFIED = 0x1004;
+
+        /// <summary>Wireless Device Status (0x1D4B) - Connection status events for BOLT receivers</summary>
+        public const ushort WIRELESS_DEVICE_STATUS = 0x1D4B;
     }
 
     /// <summary>
@@ -121,6 +124,19 @@ namespace LGSTrayHID.Protocol
         /// (not matched to a pending request).
         /// </summary>
         public const byte BATTERY_STATUS_BROADCAST = 0x00;
+    }
+
+    /// <summary>
+    /// Function IDs for Wireless Device Status feature (0x1D4B).
+    /// Used by BOLT receivers for connection status events.
+    /// </summary>
+    public static class WirelessDeviceStatusEvent
+    {
+        /// <summary>
+        /// Connection status change event (Feature 0x1D4B, Function 0x00).
+        /// Sent when device connects, disconnects, or changes connection state.
+        /// </summary>
+        public const byte STATUS_BROADCAST = 0x00;
     }
 
     /// <summary>
@@ -233,5 +249,47 @@ namespace LGSTrayHID.Protocol
     {
         /// <summary>Logitech vendor ID (0x046D)</summary>
         public const ushort LOGITECH = 0x046D;
+    }
+
+    /// <summary>
+    /// DJ (Device Juggler) protocol constants for Unifying/Nano receivers.
+    /// DJ protocol provides real-time connection status notifications from receivers.
+    /// DJ messages use different report IDs (0x20/0x21) than HID++ messages (0x10).
+    /// </summary>
+    public static class DJProtocol
+    {
+        /// <summary>DJ SHORT message report ID (7 bytes)</summary>
+        public const byte REPORT_ID_SHORT = 0x20;
+
+        /// <summary>DJ LONG message report ID (20 bytes)</summary>
+        public const byte REPORT_ID_LONG = 0x21;
+    }
+
+    /// <summary>
+    /// DJ notification report types (byte[2] in DJ messages).
+    /// These indicate the type of connection event from the receiver.
+    /// </summary>
+    public static class DJNotificationType
+    {
+        /// <summary>Device unpaired from receiver (disconnection)</summary>
+        public const byte NOTIF_DEVICE_UNPAIRED = 0x40;
+
+        /// <summary>Device paired to receiver (connection)</summary>
+        public const byte NOTIF_DEVICE_PAIRED = 0x41;
+
+        /// <summary>Connection status change (link quality, sleep/wake)</summary>
+        public const byte NOTIF_CONNECTION_STATUS = 0x42;
+    }
+
+    /// <summary>
+    /// Connection status values for NOTIF_CONNECTION_STATUS (byte[6] in DJ messages).
+    /// </summary>
+    public static class DJConnectionStatus
+    {
+        /// <summary>Device disconnected or went to sleep</summary>
+        public const byte DISCONNECTED = 0x00;
+
+        /// <summary>Device connected or woke up</summary>
+        public const byte CONNECTED = 0x01;
     }
 }
