@@ -16,6 +16,9 @@ namespace LGSTrayHID
 {
     public class HidppDevices : IDisposable
     {
+        public HidDevicePtr DevShort { get; private set; } = IntPtr.Zero;
+        public HidDevicePtr DevLong { get; private set; } = IntPtr.Zero;
+        public IReadOnlyDictionary<ushort, HidppDevice> DeviceCollection => _deviceCollection;
         public const byte SW_ID = 0x0A;
         private byte PING_PAYLOAD = 0x55;
 
@@ -25,7 +28,7 @@ namespace LGSTrayHID
         private const int PING_ENUMERATE_DELAY = 5000;
 
         private readonly Dictionary<ushort, HidppDevice> _deviceCollection = [];
-        public IReadOnlyDictionary<ushort, HidppDevice> DeviceCollection => _deviceCollection;
+        
 
         private readonly SemaphoreSlim _semaphore = new(1, 1);
         private readonly SemaphoreSlim _initSemaphore = new(1, 1); // Ensure sequential device initialization
@@ -35,16 +38,16 @@ namespace LGSTrayHID
             SingleReader = true,
             SingleWriter = true,
         });
-
-        private HidDevicePtr _devShort = IntPtr.Zero;
-        public HidDevicePtr DevShort => _devShort;
-
-        public HidDevicePtr DevLong { get; private set; } = IntPtr.Zero;
+        private readonly CommandResponseCorrelator _correlator;
+        
 
         private int _disposeCount = 0;
         public bool Disposed => _disposeCount > 0;
 
-        public HidppDevices() { }
+        public HidppDevices()
+        {
+            _correlator = new CommandResponseCorrelator(_semaphore, _channel.Reader);
+        }
 
         public void Dispose()
         {
@@ -62,7 +65,7 @@ namespace LGSTrayHID
 #endif
                 _isReading = false;
 
-                _devShort = IntPtr.Zero;
+                DevShort = IntPtr.Zero;
                 DevLong = IntPtr.Zero;
             }
         }
@@ -74,11 +77,11 @@ namespace LGSTrayHID
 
         public async Task SetDevShort(nint devShort)
         { 
-            if (_devShort != IntPtr.Zero)
+            if (DevShort != IntPtr.Zero)
             {
                 throw new ReadOnlyException();
             }
-            _devShort = devShort;
+            DevShort = devShort;
             await SetUp();
         }
 
@@ -140,36 +143,34 @@ namespace LGSTrayHID
                     LGSTrayPrimitives.DiagnosticLogger.Log($"[Device ON Event] Index: {announcementDeviceIdx}, " +
                                         $"Params: [0x{buffer[3]:X02} 0x{buffer[4]:X02} 0x{buffer[5]:X02} 0x{buffer[6]:X02}]");
 
-                    // Existing device creation logic
-                    if (true || !_deviceCollection.ContainsKey(announcementDeviceIdx))
+                    // Existing device creation logic                    
+                    _deviceCollection[announcementDeviceIdx] = new(this, announcementDeviceIdx);
+                    byte capturedIdx = announcementDeviceIdx;
+                    new Thread(async () =>
                     {
-                        _deviceCollection[announcementDeviceIdx] = new(this, announcementDeviceIdx);
-                        byte capturedIdx = announcementDeviceIdx;
-                        new Thread(async () =>
+                        try
                         {
+                            await Task.Delay(1000);
+
+                            // Wait for previous device initialization to complete (sequential init)
+                            await _initSemaphore.WaitAsync();
                             try
                             {
-                                await Task.Delay(1000);
-
-                                // Wait for previous device initialization to complete (sequential init)
-                                await _initSemaphore.WaitAsync();
-                                try
-                                {
-                                    LGSTrayPrimitives.DiagnosticLogger.Log($"Starting initialization for device {capturedIdx}");
-                                    await _deviceCollection[capturedIdx].InitAsync();
-                                    LGSTrayPrimitives.DiagnosticLogger.Log($"Completed initialization for device {capturedIdx}");
-                                }
-                                finally
-                                {
-                                    _initSemaphore.Release();
-                                }
+                                LGSTrayPrimitives.DiagnosticLogger.Log($"Starting initialization for device {capturedIdx}");
+                                await _deviceCollection[capturedIdx].InitAsync();
+                                LGSTrayPrimitives.DiagnosticLogger.Log($"Completed initialization for device {capturedIdx}");
                             }
-                            catch (Exception ex)
+                            finally
                             {
-                                LGSTrayPrimitives.DiagnosticLogger.LogError($"Device {capturedIdx} initialization failed: {ex.Message}");
+                                _initSemaphore.Release();
                             }
-                        }).Start();
-                    }
+                        }
+                        catch (Exception ex)
+                        {
+                            LGSTrayPrimitives.DiagnosticLogger.LogError($"Device {capturedIdx} initialization failed: {ex.Message}");
+                        }
+                    }).Start();
+                    
                 }
                 else
                 {
@@ -216,86 +217,27 @@ namespace LGSTrayHID
         {
             ObjectDisposedException.ThrowIf(_disposeCount > 0, this);
 
-            bool locked = await _semaphore.WaitAsync(100);
-            if (!locked)
-            {
-                return [];
-            }
-
-            try
-            {
-                await hidDevicePtr.WriteAsync((byte[])buffer);
-
-                CancellationTokenSource cts = new();
-                cts.CancelAfter(timeout);
-
-                byte[] ret;
-                while (!cts.IsCancellationRequested)
-                {
-                    try
-                    {
-                        ret = await _channel.Reader.ReadAsync(cts.Token);
-
-                        if ((ret[2] == 0x8F) || (ret[2] == buffer[2]))
-                        {
-                            return ret;
-                        }
-                    }
-                    catch (OperationCanceledException) { break; }
-                }
-
-                return [];
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return await _correlator.SendHidpp10AndWaitAsync(
+                hidDevicePtr,
+                buffer,
+                matcher: response => (response[2] == 0x8F) || (response[2] == buffer[2]),
+                timeout: timeout,
+                earlyExit: null
+            );
         }
 
         public async Task<Hidpp20> WriteRead20(HidDevicePtr hidDevicePtr, Hidpp20 buffer, int timeout = 100, bool ignoreHID10 = true)
         {
             ObjectDisposedException.ThrowIf(_disposeCount > 0, this);
 
-            bool locked = await _semaphore.WaitAsync(100);
-            if (!locked)
-            {
-                return (Hidpp20)Array.Empty<byte>();
-            }
-
-            try
-            {
-                await hidDevicePtr.WriteAsync((byte[]) buffer);
-
-                CancellationTokenSource cts = new();
-                cts.CancelAfter(timeout);
-
-                Hidpp20 ret;
-                while (!cts.IsCancellationRequested)
-                {
-                    try
-                    {
-                        ret = await _channel.Reader.ReadAsync(cts.Token);
-
-                        if (!ignoreHID10 && ret.IsError())
-                        {
-                            // HID++ 1.0 response or timeout
-                            break;
-                        }
-
-                        if ((ret.GetFeatureIndex() == buffer.GetFeatureIndex()) && (ret.GetSoftwareId() == SW_ID))
-                        {
-                            return ret;
-                        }
-                    }
-                    catch (OperationCanceledException) { break; }
-                }
-
-                return (Hidpp20) Array.Empty<byte>();
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return await _correlator.SendHidpp20AndWaitAsync(
+                hidDevicePtr,
+                buffer,
+                matcher: response => (response.GetFeatureIndex() == buffer.GetFeatureIndex()) &&
+                                     (response.GetSoftwareId() == SW_ID),
+                timeout: timeout,
+                earlyExit: ignoreHID10 ? null : response => response.IsError()
+            );
         }
 
         public async Task<bool> Ping20(byte deviceId, int timeout = 100, bool ignoreHIDPP10 = true)
@@ -304,61 +246,23 @@ namespace LGSTrayHID
 
             byte pingPayload = ++PING_PAYLOAD;
             Hidpp20 command = Hidpp20Commands.Ping(deviceId, pingPayload);
-            Hidpp20 ret = await WriteRead20(_devShort, command, timeout, ignoreHIDPP10);
-            if (ret.Length == 0)
-            {
-                return false;
-            }
 
-            return (ret.GetFeatureIndex() == 0x00) && (ret.GetSoftwareId() == SW_ID) && (ret.GetParam(2) == pingPayload);
+            Hidpp20 ret = await _correlator.SendHidpp20AndWaitAsync(
+                DevShort,
+                command,
+                matcher: response => (response.GetFeatureIndex() == 0x00) &&
+                                    (response.GetSoftwareId() == SW_ID) &&
+                                    (response.GetParam(2) == pingPayload),
+                timeout: timeout,
+                earlyExit: ignoreHIDPP10 ? null : response => response.IsError()
+            );
 
-            //bool locked = await _semaphore.WaitAsync(100);
-            //if (!locked)
-            //{
-            //    return false;
-            //}
-
-            //try
-            //{
-            //    byte pingPayload = ++PING_PAYLOAD;
-            //    Hidpp20 buffer = new byte[7] { 0x10, deviceId, 0x00, 0x10 | SW_ID, 0x00, 0x00, pingPayload };
-            //    await _devShort.WriteAsync((byte[])buffer);
-
-            //    CancellationTokenSource cts = new();
-            //    cts.CancelAfter(timeout);
-
-            //    Hidpp20 ret;
-            //    while (!cts.IsCancellationRequested)
-            //    {
-            //        try
-            //        {
-            //            ret = await _channel.Reader.ReadAsync(cts.Token);
-
-            //            if (!ignoreHIDPP10 && (ret.GetFeatureIndex() == 0x8F))
-            //            {
-            //                // HID++ 1.0 response or timeout
-            //                break;
-            //            }
-
-            //            if ((ret.GetFeatureIndex() == 0x00) && (ret.GetSoftwareId() == SW_ID) && (ret.GetParam(2) == pingPayload))
-            //            {
-            //                return true;
-            //            }
-            //        }
-            //        catch (OperationCanceledException) { break; }
-            //    }
-
-            //    return false;
-            //}
-            //finally
-            //{
-            //    _semaphore.Release();
-            //}
+            return ret.Length > 0;
         }
 
         private async Task SetUp()
         {
-            if ((_devShort == IntPtr.Zero) || (DevLong == IntPtr.Zero))
+            if ((DevShort == IntPtr.Zero) || (DevLong == IntPtr.Zero))
             {
                 return;
             }
@@ -367,7 +271,7 @@ namespace LGSTrayHID
             Console.WriteLine("Device ready");
 #endif
 
-            Thread t1 = new(async () => { await ReadThread(_devShort, 7); })
+            Thread t1 = new(async () => { await ReadThread(DevShort, 7); })
             {
                 Priority = ThreadPriority.BelowNormal
             };
@@ -395,7 +299,7 @@ namespace LGSTrayHID
                 // This enables the receiver to send 0x41 announcements when devices turn on/off
                 // Same command as per-device battery enable, but sent to receiver index 0xFF
                 var enableReceiverNotifications = Hidpp10Commands.EnableBatteryReports(0xFF);
-                ret = await WriteRead10(_devShort, enableReceiverNotifications, 1000);
+                ret = await WriteRead10(DevShort, enableReceiverNotifications, 1000);
                 LGSTrayPrimitives.DiagnosticLogger.Log($"Receiver EnableBatteryReports response: {BitConverter.ToString(ret)}");
 
                 // Also try enabling all notification types (0x0F = all reports)
@@ -409,7 +313,7 @@ namespace LGSTrayHID
                     0x0F,  // Confirmation
                     0x00   // Padding
                 };
-                ret = await WriteRead10(_devShort, enableAllReports, 1000);
+                ret = await WriteRead10(DevShort, enableAllReports, 1000);
                 LGSTrayPrimitives.DiagnosticLogger.Log($"Receiver EnableAllReports response: {BitConverter.ToString(ret)}");
 
                 LGSTrayPrimitives.DiagnosticLogger.Log("Receiver device on/off notifications enabled");
@@ -421,7 +325,7 @@ namespace LGSTrayHID
             }
 
             // Query receiver for number of connected devices
-            ret = await WriteRead10(_devShort, Hidpp10Commands.QueryDeviceCount(), 1000);
+            ret = await WriteRead10(DevShort, Hidpp10Commands.QueryDeviceCount(), 1000);
             byte numDeviceFound = 0;
             if ((ret[2] == ReceiverCommand.QUERY_DEVICE_COUNT) && (ret[3] == ReceiverCommand.SUB_COMMAND))
             {
@@ -431,7 +335,7 @@ namespace LGSTrayHID
             if (numDeviceFound > 0)
             {
                 // Force connected devices to announce themselves
-                ret = await WriteRead10(_devShort, Hidpp10Commands.ForceDeviceAnnounce(), 1000);
+                ret = await WriteRead10(DevShort, Hidpp10Commands.ForceDeviceAnnounce(), 1000);
             }
 
             await Task.Delay(TASK_DELAY);
