@@ -2,6 +2,8 @@
 using LGSTrayPrimitives.MessageStructs;
 using LGSTrayHID.Features;
 using LGSTrayHID.Protocol;
+using LGSTrayHID.Metadata;
+using LGSTrayHID.Battery;
 using System.Text;
 
 using static LGSTrayHID.HidppDevices;
@@ -25,13 +27,12 @@ namespace LGSTrayHID
         public int DeviceType { get; private set; } = 3;
         public string Identifier { get; private set; } = string.Empty;
 
-        private BatteryUpdateReturn lastBatteryReturn;
         private DateTimeOffset lastUpdate = DateTimeOffset.MinValue;
 
         // Battery event tracking
         private byte _batteryFeatureIndex = 0xFF; // 0xFF = not set
-        private DateTimeOffset _lastEventTime = DateTimeOffset.MinValue;
-        private const int EVENT_THROTTLE_MS = 500; // Prevent event spam
+        private readonly BatteryEventThrottler _eventThrottler = new(500); // 500ms throttle window
+        private readonly BatteryUpdatePublisher _batteryPublisher = new(); // Handles deduplication and IPC
 
         // Wireless device status event tracking (0x1D4B - BOLT receivers)
         private byte _wirelessStatusFeatureIndex = 0xFF; // 0xFF = not set
@@ -120,7 +121,15 @@ namespace LGSTrayHID
                 for (byte i = 0; i <= featureCount; i++)
                 {
                     ret = await _parent.WriteRead20(_parent.DevShort,
-                        Hidpp20Commands.EnumerateFeature(_deviceIdx, _featureMap[HidppFeature.FEATURE_SET], i));
+                        Hidpp20Commands.EnumerateFeature(_deviceIdx, _featureMap[HidppFeature.FEATURE_SET], i), 5000);
+
+                    // Check if we got a valid response (timeout returns empty array)
+                    if (ret.Length == 0)
+                    {
+                        DiagnosticLogger.LogWarning($"[Device {_deviceIdx}] Feature enumeration timeout at index {i}, stopping enumeration");
+                        break;
+                    }
+
                     ushort featureId = ret.GetFeatureId();
 
                     _featureMap[featureId] = i;
@@ -142,7 +151,6 @@ namespace LGSTrayHID
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0018:Inline variable declaration")]
         private async Task InitPopulateAsync()
         {
-            Hidpp20 ret;
             byte featureId;
 
             DiagnosticLogger.Log($"Enumerating features for HID device index {_deviceIdx}");
@@ -150,37 +158,16 @@ namespace LGSTrayHID
             // Device name
             if (_featureMap.TryGetValue(HidppFeature.DEVICE_NAME, out featureId))
             {
-                // Get device name length
-                ret = await _parent.WriteRead20(_parent.DevShort,
-                    Hidpp20Commands.GetDeviceNameLength(_deviceIdx, featureId));
-                int nameLength = ret.GetParam(0);
-
-                string name = "";
-
-                // Read name in chunks (3 bytes at a time)
-                while (name.Length < nameLength)
-                {
-                    ret = await _parent.WriteRead20(_parent.DevShort,
-                        Hidpp20Commands.GetDeviceNameChunk(_deviceIdx, featureId, (byte)name.Length));
-                    name += Encoding.UTF8.GetString(ret.GetParams());
-                }
-
-                DeviceName = name.TrimEnd('\0');
+                DeviceName = await DeviceMetadataRetriever.GetDeviceNameAsync(this, featureId);
 
                 // Check if device is filtered in settings
-                foreach (var tag in GlobalSettings.settings.DisabledDevices)
+                if (!DeviceFilterValidator.IsDeviceAllowed(DeviceName, GlobalSettings.settings.DisabledDevices, out string? matchedPattern))
                 {
-                    if (DeviceName.Contains(tag))
-                    {
-                        DiagnosticLogger.LogWarning($"HID device '{DeviceName}' filtered by disabledDevices config (matched: '{tag}')");
-                        return;
-                    }
-                };
+                    DiagnosticLogger.LogWarning($"HID device '{DeviceName}' filtered by disabledDevices config (matched: '{matchedPattern}')");
+                    return;
+                }
 
-                // Get device type
-                ret = await _parent.WriteRead20(_parent.DevShort,
-                    Hidpp20Commands.GetDeviceType(_deviceIdx, featureId));
-                DeviceType = ret.GetParam(0);
+                DeviceType = await DeviceMetadataRetriever.GetDeviceTypeAsync(this, featureId);
             }
             else
             {
@@ -191,29 +178,20 @@ namespace LGSTrayHID
 
             if (_featureMap.TryGetValue(HidppFeature.DEVICE_FW_INFO, out featureId))
             {
-                // Get device firmware info (unit ID, model ID, serial support flag)
-                ret = await _parent.WriteRead20(_parent.DevShort,
-                    Hidpp20Commands.GetDeviceFwInfo(_deviceIdx, featureId));
+                var fwInfo = await DeviceMetadataRetriever.GetFirmwareInfoAsync(this, featureId);
 
-                string unitId = BitConverter.ToString(ret.GetParams().ToArray(), 1, 4).Replace("-", string.Empty);
-                string modelId = BitConverter.ToString(ret.GetParams().ToArray(), 7, 5).Replace("-", string.Empty);
-
-                bool serialNumberSupported = (ret.GetParam(14) & 0x1) == 0x1;
                 string? serialNumber = null;
-                if (serialNumberSupported)
+                if (fwInfo.SerialNumberSupported)
                 {
-                    // Get device serial number
-                    ret = await _parent.WriteRead20(_parent.DevShort,
-                        Hidpp20Commands.GetSerialNumber(_deviceIdx, featureId));
-                    serialNumber = BitConverter.ToString(ret.GetParams().ToArray(), 0, 11).Replace("-", string.Empty);
+                    serialNumber = await DeviceMetadataRetriever.GetSerialNumberAsync(this, featureId);
                 }
 
-                Identifier = serialNumber ?? $"{unitId}-{modelId}";
+                Identifier = DeviceIdentifierGenerator.GenerateIdentifier(serialNumber, fwInfo.UnitId, fwInfo.ModelId, DeviceName);
             }
             else
             {
-                // Device does not have a serial identifier the device name as a hash identifier
-                Identifier = $"{DeviceName.GetHashCode():X04}";
+                // Device does not have firmware info - use device name hash as identifier
+                Identifier = DeviceIdentifierGenerator.GenerateIdentifier(null, null, null, DeviceName);
             }
 
             // Select battery feature using factory pattern
@@ -307,21 +285,11 @@ namespace LGSTrayHID
             }
 
             var batStatus = ret.Value;
-            // Log with "poll" prefix to distinguish from event updates in logs
-            DiagnosticLogger.Log($"[{DeviceName}] Battery poll: {batStatus.batteryPercentage}%");
+            var now = DateTimeOffset.Now;
+            lastUpdate = now;
 
-            lastUpdate = DateTimeOffset.Now;
-
-            if (forceIpcUpdate || (batStatus == lastBatteryReturn))
-            {                
-                // Don't report if no change
-                return;
-            }            
-            lastBatteryReturn = batStatus;
-            HidppManagerContext.Instance.SignalDeviceEvent(
-                IPCMessageType.UPDATE,
-                new UpdateMessage(Identifier, batStatus.batteryPercentage, batStatus.status, batStatus.batteryMVolt, lastUpdate)
-            );
+            // Publish update (handles deduplication, IPC, logging)
+            _batteryPublisher.PublishUpdate(Identifier, DeviceName, batStatus, now, "poll", forceIpcUpdate);
         }
 
         /// <summary>
@@ -346,12 +314,11 @@ namespace LGSTrayHID
 
             // Throttle events to prevent spam (some devices send rapid bursts)
             var now = DateTimeOffset.Now;
-            if ((now - _lastEventTime).TotalMilliseconds < EVENT_THROTTLE_MS)
+            if (!_eventThrottler.ShouldProcessEvent(now))
             {
                 DiagnosticLogger.Log($"[{DeviceName}] Battery event throttled (too frequent)");
                 return true; // Handled but suppressed
             }
-            _lastEventTime = now;
 
             // Parse the event using the battery feature
             var batteryUpdate = _batteryFeature.ParseBatteryEvent(message);
@@ -362,23 +329,10 @@ namespace LGSTrayHID
             }
 
             var batStatus = batteryUpdate.Value;
-            DiagnosticLogger.Log($"[{DeviceName}] Battery event: {batStatus.batteryPercentage}%");
-
             lastUpdate = now;
 
-            // Check for state change (deduplication)
-            if (batStatus == lastBatteryReturn)
-            {
-                // State unchanged, don't send IPC update
-                return true;
-            }
-
-            // State changed - send IPC update
-            lastBatteryReturn = batStatus;
-            HidppManagerContext.Instance.SignalDeviceEvent(
-                IPCMessageType.UPDATE,
-                new UpdateMessage(Identifier, batStatus.batteryPercentage, batStatus.status, batStatus.batteryMVolt, lastUpdate)
-            );
+            // Publish update (handles deduplication, IPC, logging)
+            _batteryPublisher.PublishUpdate(Identifier, DeviceName, batStatus, now, "event");
 
             return true; // Event handled successfully
         }
