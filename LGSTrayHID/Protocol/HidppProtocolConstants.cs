@@ -157,6 +157,13 @@ namespace LGSTrayHID.Protocol
         /// Based on Linux kernel hid-logitech-hidpp.c implementation.
         /// </summary>
         public const byte ENABLE_BATTERY_REPORT = 0x04;
+
+        /// <summary>
+        /// Flag value to enable all report types in ENABLE_REPORTS register.
+        /// Bit pattern: 0x0F enables battery + wireless + all other events.
+        /// Used for receiver-level notification enablement.
+        /// </summary>
+        public const byte ENABLE_ALL_REPORTS = 0x0F;
     }
 
     /// <summary>

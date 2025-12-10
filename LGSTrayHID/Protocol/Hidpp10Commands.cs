@@ -89,6 +89,36 @@ namespace LGSTrayHID.Protocol
         }
 
         /// <summary>
+        /// Create a command to enable all report types for the receiver (HID++ 1.0).
+        /// Writes to the ENABLE_REPORTS register to enable all notification types.
+        /// This includes battery, wireless status, and other device events.
+        /// </summary>
+        /// <param name="deviceIndex">Device index (typically 0xFF for receiver-level)</param>
+        /// <returns>EnableAllReports command (HID++ 1.0)</returns>
+        /// <remarks>
+        /// This is more comprehensive than EnableBatteryReports (0x04),
+        /// enabling all available event types (0x0F = all bits set).
+        /// Typically sent to receiver (0xFF) to enable device ON/OFF announcements.
+        /// </remarks>
+        /// <example>
+        /// var command = Hidpp10Commands.EnableAllReports(0xFF);
+        /// await device.Parent.WriteRead10(device.Parent.DevShort, command, timeout: 1000);
+        /// </example>
+        public static byte[] EnableAllReports(byte deviceIndex)
+        {
+            return new byte[7]
+            {
+                HidppVersion.MESSAGE_PREFIX,                    // 0x10
+                deviceIndex,                                     // 0xFF (receiver) or 0x01-0x06
+                (byte)(0x80 | Hidpp10Register.ENABLE_REPORTS),  // 0x80 = SET_REGISTER, 0x00 = register address
+                0x00,                                            // Sub-address
+                Hidpp10Register.ENABLE_ALL_REPORTS,             // 0x0F = enable all report types
+                Hidpp10Register.ENABLE_ALL_REPORTS,             // Repeat for confirmation
+                0x00
+            };
+        }
+
+        /// <summary>
         /// Create a command to enable DJ (Device Juggler) notifications from the receiver.
         /// This activates real-time connection/disconnection events for wireless devices.
         /// Note: This is a DJ protocol command (0x20) not HID++ (0x10).

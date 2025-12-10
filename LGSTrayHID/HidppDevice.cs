@@ -6,363 +6,360 @@ using LGSTrayHID.Metadata;
 using LGSTrayHID.Battery;
 
 
-namespace LGSTrayHID
+namespace LGSTrayHID;
+
+public class HidppDevice
 {
-    public class HidppDevice
+    public HidppDevices Parent { get; }
+    public byte DeviceIdx { get; }
+    public string DeviceName { get; private set; } = string.Empty;
+    public int DeviceType { get; private set; } = 3;
+    public string Identifier { get; private set; } = string.Empty;        
+    public Dictionary<ushort, byte> FeatureMap { get; } = [];
+
+    private const int INIT_PING_TIMEOUT_MS = 5000;
+    
+    private IBatteryFeature? _batteryFeature;        
+    private DateTimeOffset lastUpdate = DateTimeOffset.MinValue;
+
+    // Battery event tracking
+    private byte _batteryFeatureIndex = 0xFF; // 0xFF = not set
+    private readonly BatteryEventThrottler _eventThrottler = new(500); // 500ms throttle window
+    private readonly BatteryUpdatePublisher _batteryPublisher = new(); // Handles deduplication and IPC
+
+    // Wireless device status event tracking (0x1D4B - BOLT receivers)
+    private byte _wirelessStatusFeatureIndex = 0xFF; // 0xFF = not set
+    // Semaphore to prevent concurrent InitAsync calls
+    private readonly SemaphoreSlim _initSemaphore = new(1, 1);
+
+    public HidppDevice(HidppDevices parent, byte deviceIdx)
     {
-        public HidppDevices Parent { get; }
-        public byte DeviceIdx { get; }
-        public string DeviceName { get; private set; } = string.Empty;
-        public int DeviceType { get; private set; } = 3;
-        public string Identifier { get; private set; } = string.Empty;        
-        public Dictionary<ushort, byte> FeatureMap { get; } = [];
+        Parent = parent;
+        DeviceIdx = deviceIdx;
+    }
 
-        private const int INIT_PING_TIMEOUT_MS = 5000;
-        
-        private IBatteryFeature? _batteryFeature;        
-        private DateTimeOffset lastUpdate = DateTimeOffset.MinValue;
-
-        // Battery event tracking
-        private byte _batteryFeatureIndex = 0xFF; // 0xFF = not set
-        private readonly BatteryEventThrottler _eventThrottler = new(500); // 500ms throttle window
-        private readonly BatteryUpdatePublisher _batteryPublisher = new(); // Handles deduplication and IPC
-
-        // Wireless device status event tracking (0x1D4B - BOLT receivers)
-        private byte _wirelessStatusFeatureIndex = 0xFF; // 0xFF = not set
-        // Semaphore to prevent concurrent InitAsync calls
-        private readonly SemaphoreSlim _initSemaphore = new(1, 1);
-
-        public HidppDevice(HidppDevices parent, byte deviceIdx)
+    public async Task InitAsync()
+    {
+        await _initSemaphore.WaitAsync();
+        try
         {
-            Parent = parent;
-            DeviceIdx = deviceIdx;
-        }
+            Hidpp20 ret;
 
-        public async Task InitAsync()
-        {
-            await _initSemaphore.WaitAsync();
-            try
+            // Sync Ping with retry logic for sleeping devices
+            const int maxRetries = 10;
+            const int initialDelay = 2000; // 2 seconds
+            bool pingSuccess = false;
+
+            for (int retry = 0; retry < maxRetries && !pingSuccess; retry++)
             {
-                Hidpp20 ret;
-
-                // Sync Ping with retry logic for sleeping devices
-                const int maxRetries = 10;
-                const int initialDelay = 2000; // 2 seconds
-                bool pingSuccess = false;
-
-                for (int retry = 0; retry < maxRetries && !pingSuccess; retry++)
+                // Add delay before retry attempts (not on first attempt)
+                if (retry > 0)
                 {
-                    // Add delay before retry attempts (not on first attempt)
-                    if (retry > 0)
-                    {
-                        int delay = initialDelay * (int)Math.Pow(2, retry - 1);
-                        DiagnosticLogger.Log($"Retrying HID device index {DeviceIdx} after {delay}ms delay (attempt {retry + 1}/{maxRetries})");
-                        await Task.Delay(delay);
-                    }
-
-                    // Ping test
-                    int successCount = 0;
-                    int successThresh = 3;
-                    DiagnosticLogger.Log($"Starting ping test for HID device index {DeviceIdx}");
-                    for (int i = 0; i < 10; i++)
-                    {
-                        var ping = await Parent.Ping20(DeviceIdx, INIT_PING_TIMEOUT_MS);
-                        if (ping)
-                        {
-                            successCount++;
-                        }
-                        else
-                        {
-                            successCount = 0;
-                        }
-
-                        if (successCount >= successThresh)
-                        {
-                            pingSuccess = true;
-                            break;
-                        }
-                    }
-
-                    // Log result if this is the last attempt and still failing
-                    if (!pingSuccess && retry == maxRetries - 1)
-                    {
-                        DiagnosticLogger.LogWarning($"HID device index {DeviceIdx} failed ping test after {maxRetries} retries ({successCount}/{successThresh} successes)");
-                        return;
-                    }
+                    int delay = initialDelay * (int)Math.Pow(2, retry - 1);
+                    DiagnosticLogger.Log($"Retrying HID device index {DeviceIdx} after {delay}ms delay (attempt {retry + 1}/{maxRetries})");
+                    await Task.Delay(delay);
                 }
 
-                DiagnosticLogger.Log($"HID device index {DeviceIdx} passed ping test");
-
-                // Find IFeatureSet (0x0001) - get its feature index
-                ret = await Parent.WriteRead20(Parent.DevShort,
-                    Hidpp20Commands.GetFeatureIndex(DeviceIdx, HidppFeature.FEATURE_SET));
-                FeatureMap[HidppFeature.FEATURE_SET] = ret.GetParam(0);
-
-                // Get Feature Count
-                ret = await Parent.WriteRead20(Parent.DevShort,
-                    Hidpp20Commands.GetFeatureCount(DeviceIdx, FeatureMap[HidppFeature.FEATURE_SET]));
-                int featureCount = ret.GetParam(0);
-
-                // Enumerate Features
-                for (byte i = 0; i <= featureCount; i++)
+                // Ping test
+                int successCount = 0;
+                int successThresh = 3;
+                DiagnosticLogger.Log($"Starting ping test for HID device index {DeviceIdx}");
+                for (int i = 0; i < 10; i++)
                 {
-                    ret = await Parent.WriteRead20(Parent.DevShort,
-                        Hidpp20Commands.EnumerateFeature(DeviceIdx, FeatureMap[HidppFeature.FEATURE_SET], i), 5000);
-
-                    // Check if we got a valid response (timeout returns empty array)
-                    if (ret.Length == 0)
+                    var ping = await Parent.Ping20(DeviceIdx, INIT_PING_TIMEOUT_MS);
+                    if (ping)
                     {
-                        DiagnosticLogger.LogWarning($"[Device {DeviceIdx}] Feature enumeration timeout at index {i}, stopping enumeration");
+                        successCount++;
+                    }
+                    else
+                    {
+                        successCount = 0;
+                    }
+
+                    if (successCount >= successThresh)
+                    {
+                        pingSuccess = true;
                         break;
                     }
-
-                    ushort featureId = ret.GetFeatureId();
-
-                    FeatureMap[featureId] = i;
-
-                    #if DEBUG
-                    // Log feature mapping for debugging connection events
-                    DiagnosticLogger.Log($"[Device {DeviceIdx}] Feature 0x{featureId:X04} mapped to index {i}");
-                    #endif
                 }
 
-                await InitPopulateAsync();
-            }
-            finally
-            {
-                _initSemaphore.Release();
-            }
-        }
-
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0018:Inline variable declaration")]
-        private async Task InitPopulateAsync()
-        {
-            byte featureId;
-
-            DiagnosticLogger.Log($"Enumerating features for HID device index {DeviceIdx}");
-
-            // Device name
-            if (FeatureMap.TryGetValue(HidppFeature.DEVICE_NAME, out featureId))
-            {
-                DeviceName = await DeviceMetadataRetriever.GetDeviceNameAsync(this, featureId);
-
-                // Check if device is filtered in settings
-                if (!DeviceFilterValidator.IsDeviceAllowed(DeviceName, GlobalSettings.settings.DisabledDevices, out string? matchedPattern))
+                // Log result if this is the last attempt and still failing
+                if (!pingSuccess && retry == maxRetries - 1)
                 {
-                    DiagnosticLogger.LogWarning($"HID device '{DeviceName}' filtered by disabledDevices config (matched: '{matchedPattern}')");
+                    DiagnosticLogger.LogWarning($"HID device index {DeviceIdx} failed ping test after {maxRetries} retries ({successCount}/{successThresh} successes)");
                     return;
                 }
-
-                DeviceType = await DeviceMetadataRetriever.GetDeviceTypeAsync(this, featureId);
             }
-            else
+
+            DiagnosticLogger.Log($"HID device index {DeviceIdx} passed ping test");
+
+            // Find IFeatureSet (0x0001) - get its feature index
+            ret = await Parent.WriteRead20(Parent.DevShort,
+                Hidpp20Commands.GetFeatureIndex(DeviceIdx, HidppFeature.FEATURE_SET));
+            FeatureMap[HidppFeature.FEATURE_SET] = ret.GetParam(0);
+
+            // Get Feature Count
+            ret = await Parent.WriteRead20(Parent.DevShort,
+                Hidpp20Commands.GetFeatureCount(DeviceIdx, FeatureMap[HidppFeature.FEATURE_SET]));
+            int featureCount = ret.GetParam(0);
+
+            // Enumerate Features
+            for (byte i = 0; i <= featureCount; i++)
             {
-                // Device does not have a name/Hidpp error ignore it
-                DiagnosticLogger.LogWarning($"HID device index {DeviceIdx} missing feature 0x0005 (device name), ignoring");
+                ret = await Parent.WriteRead20(Parent.DevShort,
+                    Hidpp20Commands.EnumerateFeature(DeviceIdx, FeatureMap[HidppFeature.FEATURE_SET], i), 5000);
+
+                // Check if we got a valid response (timeout returns empty array)
+                if (ret.Length == 0)
+                {
+                    DiagnosticLogger.LogWarning($"[Device {DeviceIdx}] Feature enumeration timeout at index {i}, stopping enumeration");
+                    break;
+                }
+
+                ushort featureId = ret.GetFeatureId();
+
+                FeatureMap[featureId] = i;
+                
+                // Log feature mapping for debugging connection events
+                DiagnosticLogger.Log($"[Device {DeviceIdx}] Feature 0x{featureId:X04} mapped to index {i}");                    
+            }
+
+            await InitPopulateAsync();
+        }
+        finally
+        {
+            _initSemaphore.Release();
+        }
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0018:Inline variable declaration")]
+    private async Task InitPopulateAsync()
+    {
+        byte featureId;
+
+        DiagnosticLogger.Log($"Enumerating features for HID device index {DeviceIdx}");
+
+        // Device name
+        if (FeatureMap.TryGetValue(HidppFeature.DEVICE_NAME, out featureId))
+        {
+            DeviceName = await DeviceMetadataRetriever.GetDeviceNameAsync(this, featureId);
+
+            // Check if device is filtered in settings
+            if (!DeviceFilterValidator.IsDeviceAllowed(DeviceName, GlobalSettings.settings.DisabledDevices, out string? matchedPattern))
+            {
+                DiagnosticLogger.LogWarning($"HID device '{DeviceName}' filtered by disabledDevices config (matched: '{matchedPattern}')");
                 return;
             }
 
-            if (FeatureMap.TryGetValue(HidppFeature.DEVICE_FW_INFO, out featureId))
+            DeviceType = await DeviceMetadataRetriever.GetDeviceTypeAsync(this, featureId);
+        }
+        else
+        {
+            // Device does not have a name/Hidpp error ignore it
+            DiagnosticLogger.LogWarning($"HID device index {DeviceIdx} missing feature 0x0005 (device name), ignoring");
+            return;
+        }
+
+        if (FeatureMap.TryGetValue(HidppFeature.DEVICE_FW_INFO, out featureId))
+        {
+            var fwInfo = await DeviceMetadataRetriever.GetFirmwareInfoAsync(this, featureId);
+
+            string? serialNumber = null;
+            if (fwInfo.SerialNumberSupported)
             {
-                var fwInfo = await DeviceMetadataRetriever.GetFirmwareInfoAsync(this, featureId);
-
-                string? serialNumber = null;
-                if (fwInfo.SerialNumberSupported)
-                {
-                    serialNumber = await DeviceMetadataRetriever.GetSerialNumberAsync(this, featureId);
-                }
-
-                Identifier = DeviceIdentifierGenerator.GenerateIdentifier(serialNumber, fwInfo.UnitId, fwInfo.ModelId, DeviceName);
-            }
-            else
-            {
-                // Device does not have firmware info - use device name hash as identifier
-                Identifier = DeviceIdentifierGenerator.GenerateIdentifier(null, null, null, DeviceName);
-            }
-
-            // Select battery feature using factory pattern
-            _batteryFeature = BatteryFeatureFactory.GetBatteryFeature(FeatureMap);
-
-            // Log battery feature presence and enable events
-            if (_batteryFeature != null)
-            {
-                DiagnosticLogger.Log($"[{DeviceName}] Battery feature found: {_batteryFeature.FeatureName} (ID: {_batteryFeature.FeatureId:X})");
-
-                // Store the feature index for event routing
-                _batteryFeatureIndex = FeatureMap[_batteryFeature.FeatureId];
-
-                // Enable battery event reporting (HID++ 1.0 command)
-                // Note: Not all devices support this - failures are non-fatal
-                try
-                {
-                    var enableCmd = Hidpp10Commands.EnableBatteryReports(DeviceIdx);
-                    await Parent.WriteRead10(Parent.DevShort, enableCmd, timeout: 1000);
-                    DiagnosticLogger.Log($"[{DeviceName}] Battery events enabled");
-                }
-                catch (Exception ex)
-                {
-                    DiagnosticLogger.LogWarning($"[{DeviceName}] Failed to enable battery events (device may not support): {ex.Message}");
-                    // Non-fatal - device will fall back to polling
-                }
-            }
-            else
-            {
-                DiagnosticLogger.LogWarning($"[{DeviceName}] No battery feature found.");
+                serialNumber = await DeviceMetadataRetriever.GetSerialNumberAsync(this, featureId);
             }
 
-            // Check for wireless device status feature (0x1D4B - BOLT receivers)
-            if (FeatureMap.ContainsKey(HidppFeature.WIRELESS_DEVICE_STATUS))
+            Identifier = DeviceIdentifierGenerator.GenerateIdentifier(serialNumber, fwInfo.UnitId, fwInfo.ModelId, DeviceName);
+        }
+        else
+        {
+            // Device does not have firmware info - use device name hash as identifier
+            Identifier = DeviceIdentifierGenerator.GenerateIdentifier(null, null, null, DeviceName);
+        }
+
+        // Select battery feature using factory pattern
+        _batteryFeature = BatteryFeatureFactory.GetBatteryFeature(FeatureMap);
+
+        // Log battery feature presence and enable events
+        if (_batteryFeature != null)
+        {
+            DiagnosticLogger.Log($"[{DeviceName}] Battery feature found: {_batteryFeature.FeatureName} (ID: {_batteryFeature.FeatureId:X})");
+
+            // Store the feature index for event routing
+            _batteryFeatureIndex = FeatureMap[_batteryFeature.FeatureId];
+
+            // Enable battery event reporting (HID++ 1.0 command)
+            // Note: Not all devices support this - failures are non-fatal
+            try
             {
-                _wirelessStatusFeatureIndex = FeatureMap[HidppFeature.WIRELESS_DEVICE_STATUS];
-                DiagnosticLogger.Log($"[{DeviceName}] Wireless device status feature (0x1D4B) found at index {_wirelessStatusFeatureIndex}");
-                // Note: Events are automatically enabled by the battery enable command (HID++ 1.0 register 0x00)
+               // var enableCmd = Hidpp10Commands.EnableBatteryReports(DeviceIdx);
+              //  await Parent.WriteRead10(Parent.DevShort, enableCmd, timeout: 1000);
+             //   DiagnosticLogger.Log($"[{DeviceName}] Battery events enabled");
             }
-
-            HidppManagerContext.Instance.SignalDeviceEvent(
-                IPCMessageType.INIT,
-                new InitMessage(Identifier, DeviceName, _batteryFeature != null, (DeviceType)DeviceType)
-            );
-
-            DiagnosticLogger.Log($"HID device registered - {Identifier} ({DeviceName})");
-
-            await Task.Delay(1000);
-            if (_batteryFeature == null) { return; }
-
-            _ = Task.Run(async () =>
+            catch (Exception ex)
             {
-               
+                DiagnosticLogger.LogWarning($"[{DeviceName}] Failed to enable battery events (device may not support): {ex.Message}");
+                // Non-fatal - device will fall back to polling
+            }
+        }
+        else
+        {
+            DiagnosticLogger.LogWarning($"[{DeviceName}] No battery feature found.");
+        }
 
-                while (true)
-                {
-                    var now = DateTimeOffset.Now;
+        // Check for wireless device status feature (0x1D4B - BOLT receivers)
+        if (FeatureMap.ContainsKey(HidppFeature.WIRELESS_DEVICE_STATUS))
+        {
+            _wirelessStatusFeatureIndex = FeatureMap[HidppFeature.WIRELESS_DEVICE_STATUS];
+            DiagnosticLogger.Log($"[{DeviceName}] Wireless device status feature (0x1D4B) found at index {_wirelessStatusFeatureIndex}");
+            // Note: Events are automatically enabled by the battery enable command (HID++ 1.0 register 0x00)
+        }
+
+        HidppManagerContext.Instance.SignalDeviceEvent(
+            IPCMessageType.INIT,
+            new InitMessage(Identifier, DeviceName, _batteryFeature != null, (DeviceType)DeviceType)
+        );
+
+        DiagnosticLogger.Log($"HID device registered - {Identifier} ({DeviceName})");
+
+        await Task.Delay(1000);
+        if (_batteryFeature == null) { return; }
+
+        _ = Task.Run(async () =>
+        {
+           
+
+            while (true)
+            {
+                var now = DateTimeOffset.Now;
 #if DEBUG
-                    var expectedUpdateTime = lastUpdate.AddSeconds(600);
+                var expectedUpdateTime = lastUpdate.AddSeconds(600);
 #else
-                    var expectedUpdateTime = lastUpdate.AddSeconds(GlobalSettings.settings.PollPeriod);
+                var expectedUpdateTime = lastUpdate.AddSeconds(GlobalSettings.settings.PollPeriod);
 #endif
-                    if (now < expectedUpdateTime)
-                    {
-                        await Task.Delay((int)(expectedUpdateTime - now).TotalMilliseconds);
-                    }
-
-                    await UpdateBattery();
-                    await Task.Delay(GlobalSettings.settings.RetryTime * 1000);
-                    DiagnosticLogger.Log($"Polling battery for device {DeviceName}");
+                if (now < expectedUpdateTime)
+                {
+                    await Task.Delay((int)(expectedUpdateTime - now).TotalMilliseconds);
                 }
-            });
+
+                await UpdateBattery();
+                await Task.Delay(GlobalSettings.settings.RetryTime * 1000);
+                DiagnosticLogger.Log($"Polling battery for device {DeviceName}");
+            }
+        });
+    }
+
+    public async Task UpdateBattery(bool forceIpcUpdate = false)
+    {
+        if (Parent.Disposed) { 
+            DiagnosticLogger.Log($"[{DeviceName}] Parent disposed, skipping battery update.");
+            return; 
+        }
+        if (_batteryFeature == null) {
+            DiagnosticLogger.Log($"[{DeviceName}] No battery feature available, skipping battery update.");
+            return;
         }
 
-        public async Task UpdateBattery(bool forceIpcUpdate = false)
+        var ret = await _batteryFeature.GetBatteryAsync(this);
+
+        if (ret == null) { 
+            DiagnosticLogger.Log($"[{DeviceName}] Battery update returned null, skipping.");
+            return; 
+        }
+
+        var batStatus = ret.Value;
+        var now = DateTimeOffset.Now;
+        lastUpdate = now;
+
+        // Publish update (handles deduplication, IPC, logging)
+        _batteryPublisher.PublishUpdate(Identifier, DeviceName, batStatus, now, "poll", forceIpcUpdate);
+    }
+
+    /// <summary>
+    /// Attempt to handle a message as a battery event.
+    /// Returns true if the message was a battery event and was handled.
+    /// </summary>
+    /// <param name="message">The HID++ message to check</param>
+    /// <returns>True if this was a battery event and was handled, false otherwise</returns>
+    public async Task<bool> TryHandleBatteryEventAsync(Hidpp20 message)
+    {
+        // Check if we have a battery feature configured
+        if (_batteryFeature == null || _batteryFeatureIndex == 0xFF)
         {
-            if (Parent.Disposed) { 
-                DiagnosticLogger.Log($"[{DeviceName}] Parent disposed, skipping battery update.");
-                return; 
-            }
-            if (_batteryFeature == null) {
-                DiagnosticLogger.Log($"[{DeviceName}] No battery feature available, skipping battery update.");
-                return;
-            }
-
-            var ret = await _batteryFeature.GetBatteryAsync(this);
-
-            if (ret == null) { 
-                DiagnosticLogger.Log($"[{DeviceName}] Battery update returned null, skipping.");
-                return; 
-            }
-
-            var batStatus = ret.Value;
-            var now = DateTimeOffset.Now;
-            lastUpdate = now;
-
-            // Publish update (handles deduplication, IPC, logging)
-            _batteryPublisher.PublishUpdate(Identifier, DeviceName, batStatus, now, "poll", forceIpcUpdate);
+            return false;
         }
 
-        /// <summary>
-        /// Attempt to handle a message as a battery event.
-        /// Returns true if the message was a battery event and was handled.
-        /// </summary>
-        /// <param name="message">The HID++ message to check</param>
-        /// <returns>True if this was a battery event and was handled, false otherwise</returns>
-        public async Task<bool> TryHandleBatteryEventAsync(Hidpp20 message)
+        // Check if this message is a battery event for our feature
+        if (!message.IsBatteryEvent(_batteryFeatureIndex))
         {
-            // Check if we have a battery feature configured
-            if (_batteryFeature == null || _batteryFeatureIndex == 0xFF)
-            {
-                return false;
-            }
-
-            // Check if this message is a battery event for our feature
-            if (!message.IsBatteryEvent(_batteryFeatureIndex))
-            {
-                return false;
-            }
-
-            // Throttle events to prevent spam (some devices send rapid bursts)
-            var now = DateTimeOffset.Now;
-            if (!_eventThrottler.ShouldProcessEvent(now))
-            {
-                DiagnosticLogger.Log($"[{DeviceName}] Battery event throttled (too frequent)");
-                return true; // Handled but suppressed
-            }
-
-            // Parse the event using the battery feature
-            var batteryUpdate = _batteryFeature.ParseBatteryEvent(message);
-            if (batteryUpdate == null)
-            {
-                DiagnosticLogger.LogWarning($"[{DeviceName}] Failed to parse battery event");
-                return false;
-            }
-
-            var batStatus = batteryUpdate.Value;
-            lastUpdate = now;
-
-            // Publish update (handles deduplication, IPC, logging)
-            _batteryPublisher.PublishUpdate(Identifier, DeviceName, batStatus, now, "event");
-
-            return true; // Event handled successfully
+            return false;
         }
 
-        /// <summary>
-        /// Attempt to handle a message as a wireless device status event (0x1D4B).
-        /// This is used by BOLT receivers to report connection/disconnection events.
-        /// Returns true if the message was a wireless status event and was handled.
-        /// </summary>
-        /// <param name="message">The HID++ message to check</param>
-        /// <returns>True if this was a wireless status event and was handled, false otherwise</returns>
-        public bool TryHandleWirelessStatusEvent(Hidpp20 message)
+        // Throttle events to prevent spam (some devices send rapid bursts)
+        var now = DateTimeOffset.Now;
+        if (!_eventThrottler.ShouldProcessEvent(now))
         {
-            // Check if we have wireless status feature configured
-            if (_wirelessStatusFeatureIndex == 0xFF)
-            {
-                return false;
-            }
-
-            // Check if this message is a wireless status event
-            // Feature index should match and function should be 0x00 (status broadcast)
-            if (message.GetFeatureIndex() != _wirelessStatusFeatureIndex ||
-                message.GetFunctionId() != WirelessDeviceStatusEvent.STATUS_BROADCAST)
-            {
-                return false;
-            }
-
-            // Parse event parameters from your device logs
-            // Message: 11 02 04 00 01 01 01
-            // Byte 4 (param 0): 0x01
-            // Byte 5 (param 1): 0x01
-            // Byte 6 (param 2): 0x01
-            byte param0 = message.GetParam(0);
-            byte param1 = message.GetParam(1);
-            byte param2 = message.GetParam(2);
-
-            // Based on your logs, this event fires when device is turned ON
-            // Status interpretation: param0 = 0x01 appears to indicate connection/wake
-            bool isConnected = (param0 & 0x01) == 1;
-            string state = isConnected ? "CONNECTED/WOKE UP" : "DISCONNECTED/SLEEPING";
-
-            DiagnosticLogger.Log($"Wireless Status Event: {DeviceName} - {state} (Params: 0x{param0:X02} 0x{param1:X02} 0x{param2:X02})");
-
-            return true;
+            DiagnosticLogger.Log($"[{DeviceName}] Battery event throttled (too frequent)");
+            return true; // Handled but suppressed
         }
+
+        // Parse the event using the battery feature
+        var batteryUpdate = _batteryFeature.ParseBatteryEvent(message);
+        if (batteryUpdate == null)
+        {
+            DiagnosticLogger.LogWarning($"[{DeviceName}] Failed to parse battery event");
+            return false;
+        }
+
+        var batStatus = batteryUpdate.Value;
+        lastUpdate = now;
+
+        // Publish update (handles deduplication, IPC, logging)
+        _batteryPublisher.PublishUpdate(Identifier, DeviceName, batStatus, now, "event");
+
+        return true; // Event handled successfully
+    }
+
+    /// <summary>
+    /// Attempt to handle a message as a wireless device status event (0x1D4B).
+    /// This is used by BOLT receivers to report connection/disconnection events.
+    /// Returns true if the message was a wireless status event and was handled.
+    /// </summary>
+    /// <param name="message">The HID++ message to check</param>
+    /// <returns>True if this was a wireless status event and was handled, false otherwise</returns>
+    public bool TryHandleWirelessStatusEvent(Hidpp20 message)
+    {
+        // Check if we have wireless status feature configured
+        if (_wirelessStatusFeatureIndex == 0xFF)
+        {
+            return false;
+        }
+
+        // Check if this message is a wireless status event
+        // Feature index should match and function should be 0x00 (status broadcast)
+        if (message.GetFeatureIndex() != _wirelessStatusFeatureIndex ||
+            message.GetFunctionId() != WirelessDeviceStatusEvent.STATUS_BROADCAST)
+        {
+            return false;
+        }
+
+        // Parse event parameters from your device logs
+        // Message: 11 02 04 00 01 01 01
+        // Byte 4 (param 0): 0x01
+        // Byte 5 (param 1): 0x01
+        // Byte 6 (param 2): 0x01
+        byte param0 = message.GetParam(0);
+        byte param1 = message.GetParam(1);
+        byte param2 = message.GetParam(2);
+
+        // Based on your logs, this event fires when device is turned ON
+        // Status interpretation: param0 = 0x01 appears to indicate connection/wake
+        bool isConnected = (param0 & 0x01) == 1;
+        string state = isConnected ? "CONNECTED/WOKE UP" : "DISCONNECTED/SLEEPING";
+
+        DiagnosticLogger.Log($"Wireless Status Event: {DeviceName} - {state} (Params: 0x{param0:X02} 0x{param1:X02} 0x{param2:X02})");
+
+        return true;
     }
 }
