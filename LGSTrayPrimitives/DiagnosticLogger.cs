@@ -6,11 +6,10 @@ namespace LGSTrayPrimitives;
 /// <summary>
 /// Diagnostic logger for tracing device discovery and UI updates.
 /// Writes to diagnostic.log file in the application directory.
-/// Calls to log fuctions are discarded in Release builds
+/// Calls to log functions are discarded in Release builds
 /// </summary>
 public static class DiagnosticLogger
 {
-    private static readonly object _lock = new object();
     private static readonly string _logFilePath = Path.Combine(AppContext.BaseDirectory, "diagnostic.log");
 
     /// <summary>
@@ -65,16 +64,22 @@ public static class DiagnosticLogger
 
     private static void WriteToFile(string message)
     {
+        using var mutex = new Mutex(false, "LOG_WRITE");
+        var hasHandle = false;
         try
         {
-            lock (_lock)
-            {
-                File.AppendAllText(_logFilePath, message + Environment.NewLine);
-            }
+            hasHandle = mutex.WaitOne(Timeout.Infinite, false);
+
+            File.AppendAllText(_logFilePath, message + Environment.NewLine);
         }
-        catch
+        catch (Exception)
         {
             Console.WriteLine("Failed to write to diagnostic log file.");
+        }
+        finally
+        {
+            if (hasHandle)
+                mutex.ReleaseMutex();
         }
     }
     
@@ -87,7 +92,23 @@ public static class DiagnosticLogger
 
 
     public static void ResetLog()
-    {    
-        File.WriteAllText(_logFilePath, string.Empty);
+    {
+        using var mutex = new Mutex(false, "LOG_WRITE");
+        var hasHandle = false;
+        try
+        {
+            hasHandle = mutex.WaitOne(Timeout.Infinite, false);
+
+            File.WriteAllText(_logFilePath, string.Empty);
+        }
+        catch (Exception)
+        {
+            Console.WriteLine("Failed to clear diagnostic log file.");
+        }
+        finally
+        {
+            if (hasHandle)
+                mutex.ReleaseMutex();
+        }
     }
 }
