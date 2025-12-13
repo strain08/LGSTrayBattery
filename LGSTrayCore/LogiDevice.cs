@@ -45,10 +45,11 @@ namespace LGSTrayCore
             get
             {
                 string statusText = BatteryPercentage < 0 ? "Offline" : $"{BatteryPercentage:f2}%";
+                string chargingText = PowerSupplyStatus == PowerSupplyStatus.POWER_SUPPLY_STATUS_CHARGING ? " (Charging)" : "";
 #if DEBUG
-                return $"{DeviceName}, {statusText} - {LastUpdate}";
+                return $"{DeviceName}{chargingText}, {statusText} - {LastUpdate}";
 #else
-                return $"{DeviceName}, {statusText}";
+                return $"{DeviceName}, {statusText}{chargingText}";
 #endif
             }
         }
