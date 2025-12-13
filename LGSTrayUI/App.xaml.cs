@@ -22,6 +22,16 @@ namespace LGSTrayUI;
 /// </summary>
 public partial class App : Application
 {
+    /// <summary>
+    /// Gets whether logging is enabled (--log flag).
+    /// </summary>
+    public static bool LoggingEnabled { get; private set; }
+
+    /// <summary>
+    /// Gets whether verbose logging is enabled (--verbose flag).
+    /// </summary>
+    public static bool VerboseLoggingEnabled { get; private set; }
+
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -33,8 +43,23 @@ public partial class App : Application
 
         EnableEfficiencyMode();
 
+        // Parse command-line arguments for logging control
+        bool enableLogging = e.Args.Contains("--log");
+        bool enableVerbose = e.Args.Contains("--verbose");
+
+        // Store in static properties for LGSTrayHIDManager
+        LoggingEnabled = enableLogging;
+        VerboseLoggingEnabled = enableVerbose;
+
+        // Initialize logging before any Log() calls
+        DiagnosticLogger.Initialize(enableLogging, enableVerbose);
+
         DiagnosticLogger.ResetLog();
         DiagnosticLogger.Log("Logging started.");
+        if (enableVerbose)
+        {
+            DiagnosticLogger.Log("Verbose logging enabled.");
+        }
 
         var builder = Host.CreateEmptyApplicationBuilder(null);
         await LoadAppSettings(builder.Configuration);

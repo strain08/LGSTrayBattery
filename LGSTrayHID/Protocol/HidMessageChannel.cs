@@ -65,9 +65,7 @@ namespace LGSTrayHID.Protocol
                 if (bytesRead < 0) break;      // Error - stop thread
                 if (bytesRead == 0) continue;  // Timeout - retry
 
-#if VERBOSE
                 LogRawMessage(buffer, bytesRead, bufferSize);
-#endif
 
                 await _router.RouteMessageAsync(buffer);
             }

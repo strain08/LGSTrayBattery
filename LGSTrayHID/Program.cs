@@ -17,6 +17,11 @@ namespace LGSTrayHID
     {
         static async Task Main(string[] args)
         {
+            // Parse logging flags BEFORE any configuration loading
+            bool enableLogging = args.Contains("--log");
+            bool enableVerbose = args.Contains("--verbose");
+            DiagnosticLogger.Initialize(enableLogging, enableVerbose);
+
             var builder = Host.CreateEmptyApplicationBuilder(null);
             builder.Configuration.AddTomlFile("appsettings.toml");
 

@@ -6,18 +6,50 @@ namespace LGSTrayPrimitives;
 /// <summary>
 /// Diagnostic logger for tracing device discovery and UI updates.
 /// Writes to diagnostic.log file in the application directory.
-/// Calls to log functions are discarded in Release builds
+/// Enable with --log command-line flag. Works in both Debug and Release builds.
 /// </summary>
 public static class DiagnosticLogger
 {
     private static readonly string _logFilePath = Path.Combine(AppContext.BaseDirectory, "diagnostic.log");
 
+    private static bool _isEnabled = false;
+    private static bool _isVerboseEnabled = false;
+
+    /// <summary>
+    /// Gets whether logging is enabled (--log flag).
+    /// </summary>
+    public static bool IsEnabled => _isEnabled;
+
+    /// <summary>
+    /// Gets whether verbose logging is enabled (--verbose flag).
+    /// </summary>
+    public static bool IsVerboseEnabled => _isVerboseEnabled;
+
+    /// <summary>
+    /// Initialize logging based on command-line arguments.
+    /// Must be called before any Log() calls.
+    /// </summary>
+    /// <param name="enableLogging">Enable standard logging (--log)</param>
+    /// <param name="enableVerbose">Enable verbose logging (--verbose)</param>
+    public static void Initialize(bool enableLogging, bool enableVerbose)
+    {
+        _isEnabled = enableLogging;
+        _isVerboseEnabled = enableVerbose;
+
+        // If verbose is enabled, standard logging must also be enabled
+        if (_isVerboseEnabled && !_isEnabled)
+        {
+            _isEnabled = true;
+        }
+    }
+
     /// <summary>
     /// Log an informational message with timestamp.
     /// </summary>
-    [Conditional("DEBUG")]
     public static void Log(string message, [CallerMemberName] string callerMember = "")
     {
+        if (!_isEnabled) return;
+
         string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
         string formatted = $"[{timestamp}] [{callerMember}]: {message}";
         WriteToFile(formatted);
@@ -25,13 +57,14 @@ public static class DiagnosticLogger
     }
     /// <summary>
     /// Log verbose message with timestamp.
-    /// Requires VERBOSE compilation symbol.
+    /// Requires --verbose flag.
     /// </summary>
-    [Conditional("VERBOSE")]
     public static void Verbose(string message, [CallerMemberName] string callerMember = "")
     {
+        if (!_isVerboseEnabled) return;
+
         string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
-        string formatted = $"[{timestamp}] [{callerMember}]: {message}";
+        string formatted = $"[{timestamp}] [VERBOSE] [{callerMember}]: {message}";
         WriteToFile(formatted);
         WriteToConsole(formatted);
     }
@@ -41,11 +74,12 @@ public static class DiagnosticLogger
     /// <summary>
     /// Log a warning message with timestamp.
     /// </summary>
-    [Conditional("DEBUG")]
     public static void LogWarning(string message, [CallerMemberName] string callerMember = "")
     {
+        if (!_isEnabled) return;
+
         string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
-        string formatted = $"[{timestamp}] LGSTray WARNING: {message}";
+        string formatted = $"[{timestamp}] WARNING: {message}";
         WriteToFile(formatted);
         WriteToConsole(formatted);
     }
@@ -53,11 +87,12 @@ public static class DiagnosticLogger
     /// <summary>
     /// Log an error message with timestamp.
     /// </summary>
-    [Conditional("DEBUG")]
     public static void LogError(string message, [CallerMemberName] string callerMember = "")
     {
+        if (!_isEnabled) return;
+
         string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
-        string formatted = $"[{timestamp}] LGSTray ERROR: {message}";
+        string formatted = $"[{timestamp}] ERROR: {message}";
         WriteToFile(formatted);
         WriteToConsole(formatted);
     }
@@ -82,17 +117,19 @@ public static class DiagnosticLogger
                 mutex.ReleaseMutex();
         }
     }
-    
-    [Conditional("DEBUG")]
+
     private static void WriteToConsole(string formatted)
     {
-
+        #if DEBUG
         Console.WriteLine(formatted);
+        #endif
     }
 
 
     public static void ResetLog()
     {
+        if (!_isEnabled) return;
+
         using var mutex = new Mutex(false, "LOG_WRITE");
         var hasHandle = false;
         try

@@ -1,4 +1,5 @@
 ﻿using LGSTrayPrimitives.MessageStructs;
+using LGSTrayPrimitives;
 using MessagePack.Resolvers;
 using MessagePipe;
 using Microsoft.Extensions.Hosting;
@@ -58,6 +59,23 @@ namespace LGSTrayCore.Managers
             _deviceEventBus = deviceEventBus;
         }
 
+        private string BuildHidDaemonArguments()
+        {
+            var args = new List<string> { Environment.ProcessId.ToString() };
+
+            if (DiagnosticLogger.IsEnabled)
+            {
+                args.Add("--log");
+            }
+
+            if (DiagnosticLogger.IsVerboseEnabled)
+            {
+                args.Add("--verbose");
+            }
+
+            return string.Join(" ", args);
+        }
+
         private async Task<int> DaemonLoop()
         {
             _daemonCts = new();
@@ -69,7 +87,7 @@ namespace LGSTrayCore.Managers
                 RedirectStandardInput = false,
                 RedirectStandardOutput = false,
                 FileName = Path.Combine(AppContext.BaseDirectory, "LGSTrayHID.exe"),
-                Arguments = Environment.ProcessId.ToString(),
+                Arguments = BuildHidDaemonArguments(),
                 UseShellExecute = true,
                 CreateNoWindow = true
             };
