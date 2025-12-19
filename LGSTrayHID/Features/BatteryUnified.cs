@@ -18,7 +18,7 @@ namespace LGSTrayHID.Features
         /// <summary>
         /// Timeout for battery capability queries (longer than standard queries).
         /// </summary>
-        private const int QueryTimeout = 1000;
+        private const int QueryTimeout = 5000;
 
         /// <inheritdoc/>
         public async Task<BatteryUpdateReturn?> GetBatteryAsync(HidppDevice device)

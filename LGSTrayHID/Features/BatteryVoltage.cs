@@ -16,6 +16,7 @@ namespace LGSTrayHID.Features
     public class BatteryVoltage : IBatteryFeature
     {
         /// <inheritdoc/>
+        private const int QueryTimeout = 5000;
         public ushort FeatureId => HidppFeature.BATTERY_VOLTAGE;
 
         public string FeatureName => "Battery Voltage";
@@ -50,7 +51,8 @@ namespace LGSTrayHID.Features
             // Send command and wait for response
             Hidpp20 response = await device.Parent.WriteRead20(
                 device.Parent.DevShort,
-                command);
+                command, 
+                QueryTimeout);
 
             // Check if request timed out or failed
             if (response.Length == 0)
