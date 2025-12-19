@@ -9,16 +9,13 @@ using System.Threading.Channels;
 
 namespace LGSTrayHID
 {
-    public class HidppDevices : IDisposable
+    public class HidppReceiver : IDisposable
     {
         public HidDevicePtr DevShort { get; private set; } = IntPtr.Zero;
         public HidDevicePtr DevLong { get; private set; } = IntPtr.Zero;
         public IReadOnlyDictionary<ushort, HidppDevice> DeviceCollection => _lifecycleManager.Devices;
         public const byte SW_ID = 0x0A;
         private byte PING_PAYLOAD = 0x55;
-
-        private const int TASK_DELAY = 2000;
-        private const int PING_ENUMERATE_DELAY = 5000;
 
         private readonly DeviceLifecycleManager _lifecycleManager;
         private readonly DeviceAnnouncementHandler _announcementHandler;
@@ -40,7 +37,7 @@ namespace LGSTrayHID
         private int _disposeCount = 0;
         public bool Disposed => _disposeCount > 0;
 
-        public HidppDevices()
+        public HidppReceiver()
         {
             _lifecycleManager = new DeviceLifecycleManager(this);
             _correlator = new CommandResponseCorrelator(_semaphore, _channel.Reader);
@@ -69,7 +66,7 @@ namespace LGSTrayHID
             }
         }
 
-        ~HidppDevices()
+        ~HidppReceiver()
         {
             Dispose(disposing: false);
         }

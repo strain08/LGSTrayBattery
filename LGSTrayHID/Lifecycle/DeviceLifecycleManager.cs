@@ -9,9 +9,9 @@ namespace LGSTrayHID.Lifecycle
     public class DeviceLifecycleManager
     {
         private readonly Dictionary<ushort, HidppDevice> _devices = [];
-        private readonly HidppDevices _parent;
+        private readonly HidppReceiver _parent;
 
-        public DeviceLifecycleManager(HidppDevices parent)
+        public DeviceLifecycleManager(HidppReceiver parent)
         {
             _parent = parent;
         }

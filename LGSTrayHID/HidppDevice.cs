@@ -10,15 +10,15 @@ namespace LGSTrayHID;
 
 public class HidppDevice
 {
-    public HidppDevices Parent { get; }
-    public byte DeviceIdx { get; }
+    public HidppReceiver Parent { get; init; }
+    public byte DeviceIdx { get; init; }
     public string DeviceName { get; private set; } = string.Empty;
-    public int DeviceType { get; private set; } = 3;
+    public int DeviceType { get; private set; } = 3; //device type 3 = mouse
     public string Identifier { get; private set; } = string.Empty;        
     public Dictionary<ushort, byte> FeatureMap { get; } = [];
 
     private const int INIT_PING_TIMEOUT_MS = 5000;
-    
+    private const int WRITE_READ_TIMEOUT_MS = 5000;
     private IBatteryFeature? _batteryFeature;        
     private DateTimeOffset lastUpdate = DateTimeOffset.MinValue;
 
@@ -32,7 +32,7 @@ public class HidppDevice
     // Semaphore to prevent concurrent InitAsync calls
     private readonly SemaphoreSlim _initSemaphore = new(1, 1);
 
-    public HidppDevice(HidppDevices parent, byte deviceIdx)
+    public HidppDevice(HidppReceiver parent, byte deviceIdx)
     {
         Parent = parent;
         DeviceIdx = deviceIdx;
@@ -107,7 +107,7 @@ public class HidppDevice
             for (byte i = 0; i <= featureCount; i++)
             {
                 ret = await Parent.WriteRead20(Parent.DevShort,
-                    Hidpp20Commands.EnumerateFeature(DeviceIdx, FeatureMap[HidppFeature.FEATURE_SET], i), 5000);
+                    Hidpp20Commands.EnumerateFeature(DeviceIdx, FeatureMap[HidppFeature.FEATURE_SET], i), WRITE_READ_TIMEOUT_MS);
 
                 // Check if we got a valid response (timeout returns empty array)
                 if (ret.Length == 0)
@@ -132,15 +132,13 @@ public class HidppDevice
         }
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0018:Inline variable declaration")]
     private async Task InitPopulateAsync()
     {
-        byte featureId;
 
         DiagnosticLogger.Log($"Enumerating features for HID device index {DeviceIdx}");
 
         // Device name
-        if (FeatureMap.TryGetValue(HidppFeature.DEVICE_NAME, out featureId))
+        if (FeatureMap.TryGetValue(HidppFeature.DEVICE_NAME, out byte featureId))
         {
             DeviceName = await DeviceMetadataRetriever.GetDeviceNameAsync(this, featureId);
 
@@ -193,9 +191,9 @@ public class HidppDevice
             // Note: Not all devices support this - failures are non-fatal
             try
             {
-               // var enableCmd = Hidpp10Commands.EnableBatteryReports(DeviceIdx);
-              //  await Parent.WriteRead10(Parent.DevShort, enableCmd, timeout: 1000);
-             //   DiagnosticLogger.Log($"[{DeviceName}] Battery events enabled");
+                var enableCmd = Hidpp10Commands.EnableBatteryReports(DeviceIdx);
+                await Parent.WriteRead10(Parent.DevShort, enableCmd, timeout: 1000);
+                DiagnosticLogger.Log($"[{DeviceName}] Battery events enabled");
             }
             catch (Exception ex)
             {
@@ -209,9 +207,9 @@ public class HidppDevice
         }
 
         // Check for wireless device status feature (0x1D4B - BOLT receivers)
-        if (FeatureMap.ContainsKey(HidppFeature.WIRELESS_DEVICE_STATUS))
+        if (FeatureMap.TryGetValue(HidppFeature.WIRELESS_DEVICE_STATUS, out byte value))
         {
-            _wirelessStatusFeatureIndex = FeatureMap[HidppFeature.WIRELESS_DEVICE_STATUS];
+            _wirelessStatusFeatureIndex = value;
             DiagnosticLogger.Log($"[{DeviceName}] Wireless device status feature (0x1D4B) found at index {_wirelessStatusFeatureIndex}");
             // Note: Events are automatically enabled by the battery enable command (HID++ 1.0 register 0x00)
         }
@@ -224,7 +222,7 @@ public class HidppDevice
         DiagnosticLogger.Log($"HID device registered - {Identifier} ({DeviceName})");
 
         await Task.Delay(1000);
-        if (_batteryFeature == null) { return; }
+        if (_batteryFeature == null) return; 
 
         _ = Task.Run(async () =>
         {
@@ -234,7 +232,7 @@ public class HidppDevice
             {
                 var now = DateTimeOffset.Now;
 #if DEBUG
-                var expectedUpdateTime = lastUpdate.AddSeconds(600);
+                var expectedUpdateTime = lastUpdate.AddSeconds(1);
 #else
                 var expectedUpdateTime = lastUpdate.AddSeconds(GlobalSettings.settings.PollPeriod);
 #endif
@@ -242,10 +240,10 @@ public class HidppDevice
                 {
                     await Task.Delay((int)(expectedUpdateTime - now).TotalMilliseconds);
                 }
-
+                DiagnosticLogger.Log($"Polling battery for device {DeviceName}");
                 await UpdateBattery();
                 await Task.Delay(GlobalSettings.settings.RetryTime * 1000);
-                DiagnosticLogger.Log($"Polling battery for device {DeviceName}");
+                
             }
         });
     }

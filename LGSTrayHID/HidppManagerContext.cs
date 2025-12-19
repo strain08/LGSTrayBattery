@@ -14,39 +14,55 @@ namespace LGSTrayHID
         public static HidppManagerContext Instance => _instance;
 
         private readonly Dictionary<string, Guid> _containerMap = [];
-        private readonly Dictionary<Guid, HidppDevices> _deviceMap = [];
+        private readonly Dictionary<Guid, HidppReceiver> _deviceMap = [];
         private readonly BlockingCollection<HidDeviceInfo> _deviceQueue = [];
 
         public delegate void HidppDeviceEventHandler(IPCMessageType messageType, IPCMessage message);
 
         public event HidppDeviceEventHandler? HidppDeviceEvent;
 
-        private HidppManagerContext()
-        {
-
-        }
+        private HidppManagerContext() {  }
 
         static HidppManagerContext()
         {
             _ = HidInit();
         }
 
-        public void SignalDeviceEvent(IPCMessageType messageType, IPCMessage message)
+        public void Start(CancellationToken cancellationToken)
         {
-            HidppDeviceEvent?.Invoke(messageType, message);
-        }
-
-        private unsafe int EnqueueDevice(HidHotPlugCallbackHandle _, HidDeviceInfo* device, HidApiHotPlugEvent hidApiHotPlugEvent, nint __)
-        {
-            if (hidApiHotPlugEvent == HidApiHotPlugEvent.HID_API_HOTPLUG_EVENT_DEVICE_ARRIVED)
+            new Thread(async () =>
             {
-                string devPath = (*device).GetPath();
-                DiagnosticLogger.Log($"HID device arrival detected: {devPath}");
-                _deviceQueue.Add(*device);
-            }
+                while (!cancellationToken.IsCancellationRequested)
+                {
+                    var dev = _deviceQueue.Take(); // blocking call
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        break;
+                    }
 
-            return 0;
+                    await InitDevice(dev);
+                }
+            }).Start();
+
+            unsafe
+            {
+                HidHotplugRegisterCallback(0x046D,
+                                           0x00,
+                                           HidApiHotPlugEvent.HID_API_HOTPLUG_EVENT_DEVICE_ARRIVED,
+                                           HidApiHotPlugFlag.HID_API_HOTPLUG_ENUMERATE,
+                                           DeviceArrived,
+                                           IntPtr.Zero,
+                                           (int*)IntPtr.Zero);
+                HidHotplugRegisterCallback(0x046D,
+                                           0x00,
+                                           HidApiHotPlugEvent.HID_API_HOTPLUG_EVENT_DEVICE_LEFT,
+                                           HidApiHotPlugFlag.NONE,
+                                           DeviceLeft,
+                                           IntPtr.Zero,
+                                           (int*)IntPtr.Zero);
+            }
         }
+
 
         private async Task<int> InitDevice(HidDeviceInfo deviceInfo)
         {
@@ -59,7 +75,7 @@ namespace LGSTrayHID
                     return 0;
             }
 
-            string devPath = (deviceInfo).GetPath();
+            string devPath = deviceInfo.GetPath();
             DiagnosticLogger.Log($"Initializing HID device: {devPath}");
 
             HidDevicePtr dev = HidOpenPath(ref deviceInfo);
@@ -67,14 +83,14 @@ namespace LGSTrayHID
 
             DiagnosticLogger.Log(devPath);
             DiagnosticLogger.Log(containerId.ToString());
-            DiagnosticLogger.Log("Usage: x{0:X04}", (deviceInfo).Usage.ToString());
-            DiagnosticLogger.Log("Page : x{0:X04}", (deviceInfo).UsagePage.ToString());
+            DiagnosticLogger.Log($"Usage: {deviceInfo.Usage:X04}");
+            DiagnosticLogger.Log($"Page : {deviceInfo.UsagePage:X04}");
             DiagnosticLogger.Log("");
 
-            if (!_deviceMap.TryGetValue(containerId, out HidppDevices? value))
+            if (!_deviceMap.TryGetValue(containerId, out HidppReceiver? hidppReceiver))
             {
-                value = new();
-                _deviceMap[containerId] = value;
+                hidppReceiver = new();
+                _deviceMap[containerId] = hidppReceiver;
                 _containerMap[devPath] = containerId;
                 DiagnosticLogger.Log($"New container created - Path: {devPath}, Container: {containerId}");
             }
@@ -86,11 +102,23 @@ namespace LGSTrayHID
             switch (messageType)
             {
                 case HidppMessageType.SHORT:
-                    await value.SetDevShort(dev);
+                    await hidppReceiver.SetDevShort(dev);
                     break;
                 case HidppMessageType.LONG:
-                    await value.SetDevLong(dev);
+                    await hidppReceiver.SetDevLong(dev);
                     break;
+            }
+
+            return 0;
+        }
+
+        private unsafe int DeviceArrived(HidHotPlugCallbackHandle _, HidDeviceInfo* device, HidApiHotPlugEvent hidApiHotPlugEvent, nint __)
+        {
+            if (hidApiHotPlugEvent == HidApiHotPlugEvent.HID_API_HOTPLUG_EVENT_DEVICE_ARRIVED)
+            {
+                string devPath = (*device).GetPath();
+                DiagnosticLogger.Log($"HID device arrival detected: {devPath}");
+                _deviceQueue.Add(*device);
             }
 
             return 0;
@@ -139,40 +167,10 @@ namespace LGSTrayHID
 
             return 0;
         }
-
-        public void Start(CancellationToken cancellationToken)
+        public void SignalDeviceEvent(IPCMessageType messageType, IPCMessage message)
         {
-            new Thread(async () =>
-            {
-                while (!cancellationToken.IsCancellationRequested)
-                {
-                    var dev = _deviceQueue.Take();
-                    if (cancellationToken.IsCancellationRequested)
-                    {
-                        break;
-                    }
-
-                    await InitDevice(dev);
-                }
-            }).Start();
-
-            unsafe
-            {
-                HidHotplugRegisterCallback(0x046D, 0x00, HidApiHotPlugEvent.HID_API_HOTPLUG_EVENT_DEVICE_ARRIVED, HidApiHotPlugFlag.HID_API_HOTPLUG_ENUMERATE, EnqueueDevice, IntPtr.Zero, (int*)IntPtr.Zero);
-                HidHotplugRegisterCallback(0x046D, 0x00, HidApiHotPlugEvent.HID_API_HOTPLUG_EVENT_DEVICE_LEFT, HidApiHotPlugFlag.NONE, DeviceLeft, IntPtr.Zero, (int*)IntPtr.Zero);
-            }
+            HidppDeviceEvent?.Invoke(messageType, message);
         }
-    
-        public async Task ForceBatteryUpdates()
-        {
-            foreach (var (_, hidppDevice) in _deviceMap)
-            {
-                var tasks = hidppDevice.DeviceCollection
-                    .Select(x => x.Value)
-                    .Select(x => x.UpdateBattery(true));
 
-                await Task.WhenAll(tasks);
-            }
-        }
     }
 }

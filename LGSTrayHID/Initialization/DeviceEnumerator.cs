@@ -13,12 +13,12 @@ namespace LGSTrayHID.Initialization
     /// </summary>
     public class DeviceEnumerator
     {
-        private readonly HidppDevices _parent;
+        private readonly HidppReceiver _parent;
         private readonly DeviceLifecycleManager _lifecycleManager;
         private const int TASK_DELAY = 2000;
         private const int PING_ENUMERATE_DELAY = 5000;
 
-        public DeviceEnumerator(HidppDevices parent, DeviceLifecycleManager lifecycleManager)
+        public DeviceEnumerator(HidppReceiver parent, DeviceLifecycleManager lifecycleManager)
         {
             _parent = parent;
             _lifecycleManager = lifecycleManager;
