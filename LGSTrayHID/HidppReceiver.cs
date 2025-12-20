@@ -47,65 +47,36 @@ namespace LGSTrayHID
             _enumerator = new DeviceEnumerator(this, _lifecycleManager);
         }
 
-        public void Dispose()
-        {
-            Dispose(disposing: true);
-            GC.SuppressFinalize(this);
-        }
-
-        protected virtual void Dispose(bool disposing)
-        {
-            if (Interlocked.Increment(ref _disposeCount) == 1)
+        
+        public async Task SetUp(HidppMessageType messageType, nint dev)
+        {            
+            switch (messageType)
             {
-                DiagnosticLogger.Log($"HidppReceiver.Dispose starting - Device count: {_lifecycleManager.Count}");
-
-                if (disposing)
-                {
-                    // Dispose devices first (stops battery polling tasks)
-                    _lifecycleManager.DisposeAll();
-
-                    // Then dispose message channel (stops read threads)
-                    _messageChannel.Dispose();
-
-                    // Dispose synchronization primitives
-                    _semaphore.Dispose();
-                    _initSemaphore.Dispose();
-
-                    // Note: _correlator doesn't own _semaphore or _channel, so we don't dispose it
-                    // Note: Channel<T> doesn't implement IDisposable - no cleanup needed
-                }
-
-                // Clear device handles
-                DevShort = IntPtr.Zero;
-                DevLong = IntPtr.Zero;
-
-                DiagnosticLogger.Log("HidppReceiver.Dispose completed");
+                case HidppMessageType.SHORT:
+                    DevShort = dev;
+                    break;
+                case HidppMessageType.LONG:
+                    DevLong = dev;
+                    break;
             }
-        }
 
-        ~HidppReceiver()
-        {
-            Dispose(disposing: false);
-        }
+            if ((DevShort == IntPtr.Zero) || (DevLong == IntPtr.Zero)) return;
 
-        public async Task SetDevShort(nint devShort)
-        {
-            if (DevShort != IntPtr.Zero)
-            {
-                throw new ReadOnlyException();
-            }
-            DevShort = devShort;
-            await SetUp();
-        }
+            // Start reading threads
+            _messageChannel.StartReading(DevShort, DevLong);
 
-        public async Task SetDevLong(nint devLong)
-        {
-            if (DevLong != IntPtr.Zero)
-            {
-                throw new ReadOnlyException();
-            }
-            DevLong = devLong;
-            await SetUp();
+            // Wait for read threads to be ready before sending commands
+            await Task.Delay(500);
+
+            // Note: DJ protocol (0x20/0x21) does not work with BOLT receivers.
+            // BOLT uses HID++ 2.0 Feature 0x1D4B (Wireless Device Status) for connection events.
+            // Events are automatically enabled by the battery enable command (HID++ 1.0 register 0x00).
+
+            // Enable receiver notifications for device on/off events
+            await EnableReceiverNotificationsAsync();
+
+            // Enumerate devices (query + announce, fallback ping)
+            await _enumerator.EnumerateDevicesAsync();
         }
 
         public async Task<byte[]> WriteRead10(HidDevicePtr hidDevicePtr, byte[] buffer, int timeout = 100)
@@ -155,32 +126,6 @@ namespace LGSTrayHID
             return ret.Length > 0;
         }
 
-        private async Task SetUp()
-        {
-            if ((DevShort == IntPtr.Zero) || (DevLong == IntPtr.Zero))
-            {
-                return;
-            }            
-
-            DiagnosticLogger.Log("Device ready");
-
-            // Start reading threads
-            _messageChannel.StartReading(DevShort, DevLong);
-
-            // Wait for read threads to be ready before sending commands
-            await Task.Delay(500);
-
-            // Note: DJ protocol (0x20/0x21) does not work with BOLT receivers.
-            // BOLT uses HID++ 2.0 Feature 0x1D4B (Wireless Device Status) for connection events.
-            // Events are automatically enabled by the battery enable command (HID++ 1.0 register 0x00).
-
-            // Enable receiver notifications for device on/off events
-            await EnableReceiverNotificationsAsync();
-
-            // Enumerate devices (query + announce, fallback ping)
-            await _enumerator.EnumerateDevicesAsync();
-        }
-
         /// <summary>
         /// Enables receiver-level notifications for device connection/disconnection events.
         /// Sends EnableBatteryReports (0x00) and EnableAllReports (0x0F) to receiver (0xFF).
@@ -209,5 +154,47 @@ namespace LGSTrayHID
                 // Non-fatal - continue with standard initialization
             }
         }
+        public void Dispose()
+        {
+            Dispose(disposing: true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (Interlocked.Increment(ref _disposeCount) == 1)
+            {
+                DiagnosticLogger.Log($"HidppReceiver.Dispose starting - Device count: {_lifecycleManager.Count}");
+
+                if (disposing)
+                {
+                    // Dispose devices first (stops battery polling tasks)
+                    _lifecycleManager.DisposeAll();
+
+                    // Then dispose message channel (stops read threads)
+                    _messageChannel.Dispose();
+
+                    // Dispose synchronization primitives
+                    _semaphore.Dispose();
+                    _initSemaphore.Dispose();
+
+                    // Note: _correlator doesn't own _semaphore or _channel, so we don't dispose it
+                    // Note: Channel<T> doesn't implement IDisposable - no cleanup needed
+                }
+
+                // Clear device handles
+                DevShort = IntPtr.Zero;
+                DevLong = IntPtr.Zero;
+
+                DiagnosticLogger.Log("HidppReceiver.Dispose completed");
+            }
+        }
+
+        ~HidppReceiver()
+        {
+            Dispose(disposing: false);
+        }
+
     }
+
 }

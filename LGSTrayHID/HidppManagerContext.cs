@@ -99,15 +99,7 @@ namespace LGSTrayHID
                 DiagnosticLogger.Log($"Existing container found - Path: {devPath}, Container: {containerId}");
             }
 
-            switch (messageType)
-            {
-                case HidppMessageType.SHORT:
-                    await hidppReceiver.SetDevShort(dev);
-                    break;
-                case HidppMessageType.LONG:
-                    await hidppReceiver.SetDevLong(dev);
-                    break;
-            }
+            await hidppReceiver.SetUp(messageType, dev);
 
             return 0;
         }
