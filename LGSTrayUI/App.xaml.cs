@@ -3,6 +3,7 @@ using LGSTrayCore.Managers;
 using LGSTrayPrimitives;
 using LGSTrayPrimitives.IPC;
 using LGSTrayPrimitives.Interfaces;
+using LGSTrayUI.Interfaces;
 using LGSTrayUI.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -93,7 +94,7 @@ public partial class App : Application
         builder.Services.AddSingleton<UserSettingsWrapper>();
         builder.Services.AddSingleton<INotificationManager, NotificationManager>();
 
-        builder.Services.AddSingleton<LogiDeviceIconFactory>();
+        builder.Services.AddSingleton<ILogiDeviceIconFactory, LogiDeviceIconFactory>();
         builder.Services.AddSingleton<LogiDeviceViewModelFactory>();
         builder.Services.AddSingleton<IDispatcher, WpfDispatcher>();
 

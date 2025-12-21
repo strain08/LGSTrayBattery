@@ -2,15 +2,16 @@
 using Hardcodet.Wpf.TaskbarNotification;
 using LGSTrayCore;
 using LGSTrayPrimitives.MessageStructs;
+using LGSTrayUI.Interfaces;
 using System;
 
 namespace LGSTrayUI
 {
     public class LogiDeviceViewModelFactory
     {
-        private readonly LogiDeviceIconFactory _logiDeviceIconFactory;
+        private readonly ILogiDeviceIconFactory _logiDeviceIconFactory;
 
-        public LogiDeviceViewModelFactory(LogiDeviceIconFactory logiDeviceIconFactory)
+        public LogiDeviceViewModelFactory(ILogiDeviceIconFactory logiDeviceIconFactory)
         {
             _logiDeviceIconFactory = logiDeviceIconFactory;
         }
@@ -26,14 +27,14 @@ namespace LGSTrayUI
 
     public partial class LogiDeviceViewModel : LogiDevice
     {
-        private readonly LogiDeviceIconFactory _logiDeviceIconFactory;
+        private readonly ILogiDeviceIconFactory _logiDeviceIconFactory;
 
         [ObservableProperty]
         private bool _isChecked = false;
 
         private LogiDeviceIcon? taskbarIcon;
 
-        public LogiDeviceViewModel(LogiDeviceIconFactory logiDeviceIconFactory)
+        public LogiDeviceViewModel(ILogiDeviceIconFactory logiDeviceIconFactory)
         {
             _logiDeviceIconFactory = logiDeviceIconFactory;
         }

@@ -11,7 +11,7 @@ namespace LGSTrayUI.Tests;
 /// </summary>
 public class LogiDeviceCollectionTests
 {
-    private LogiDeviceCollection CreateTestCollection(params string[] initialDeviceIds)
+    private static LogiDeviceCollection CreateTestCollection(params string[] initialDeviceIds)
     {
         var dispatcher = new SynchronousDispatcher();
         var subscriber = new MockSubscriber();
@@ -29,8 +29,8 @@ public class LogiDeviceCollectionTests
             }
         }
 
-        var appSettings = Options.Create(new AppSettings());
-        var iconFactory = new LogiDeviceIconFactory(appSettings, settings);
+        // Use mock icon factory that doesn't create WPF controls (avoids STA thread requirement)
+        var iconFactory = new MockLogiDeviceIconFactory();
         var viewModelFactory = new LogiDeviceViewModelFactory(iconFactory);
 
         var collection = new LogiDeviceCollection(

@@ -1,6 +1,7 @@
 ﻿using Hardcodet.Wpf.TaskbarNotification;
 using LGSTrayCore;
 using LGSTrayPrimitives;
+using LGSTrayUI.Interfaces;
 using Microsoft.Extensions.Options;
 using System;
 using System.ComponentModel;
@@ -8,7 +9,7 @@ using System.Windows.Controls;
 
 namespace LGSTrayUI
 {
-    public class LogiDeviceIconFactory
+    public class LogiDeviceIconFactory : ILogiDeviceIconFactory
     {
         private readonly AppSettings _appSettings;
         private readonly UserSettingsWrapper _userSettings;

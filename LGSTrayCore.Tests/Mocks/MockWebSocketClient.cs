@@ -13,7 +13,19 @@ namespace LGSTrayCore.Tests.Mocks
         private Subject<ResponseMessage> _messageSubject = new();
         private bool _disposed;
 
-        public IObservable<ResponseMessage> MessageReceived => _messageSubject;
+        public IObservable<ResponseMessage> MessageReceived
+        {
+            get
+            {
+                // Recreate Subject if disposed (handles RediscoverDevices scenario)
+                if (_disposed || _messageSubject == null)
+                {
+                    _messageSubject = new Subject<ResponseMessage>();
+                    _disposed = false;
+                }
+                return _messageSubject;
+            }
+        }
 
         public List<string> SentMessages { get; } = new();
 
