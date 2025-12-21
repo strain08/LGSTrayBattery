@@ -10,7 +10,7 @@ namespace LGSTrayCore.Tests.Mocks
     /// </summary>
     public class MockWebSocketClient : IWebSocketClient
     {
-        private readonly Subject<ResponseMessage> _messageSubject = new();
+        private Subject<ResponseMessage> _messageSubject = new();
         private bool _disposed;
 
         public IObservable<ResponseMessage> MessageReceived => _messageSubject;
@@ -22,7 +22,16 @@ namespace LGSTrayCore.Tests.Mocks
 
         public void Send(string message) => SentMessages.Add(message);
 
-        public Task Start() => Task.CompletedTask;
+        public Task Start()
+        {
+            // If we were disposed, recreate the subject
+            if (_disposed)
+            {
+                _messageSubject = new Subject<ResponseMessage>();
+                _disposed = false;
+            }
+            return Task.CompletedTask;
+        }
 
         public Task Stop() => Task.CompletedTask;
 
