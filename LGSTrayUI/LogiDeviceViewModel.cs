@@ -5,72 +5,71 @@ using LGSTrayPrimitives.MessageStructs;
 using LGSTrayUI.Interfaces;
 using System;
 
-namespace LGSTrayUI
+namespace LGSTrayUI;
+
+public class LogiDeviceViewModelFactory
 {
-    public class LogiDeviceViewModelFactory
+    private readonly ILogiDeviceIconFactory _logiDeviceIconFactory;
+
+    public LogiDeviceViewModelFactory(ILogiDeviceIconFactory logiDeviceIconFactory)
     {
-        private readonly ILogiDeviceIconFactory _logiDeviceIconFactory;
+        _logiDeviceIconFactory = logiDeviceIconFactory;
+    }
 
-        public LogiDeviceViewModelFactory(ILogiDeviceIconFactory logiDeviceIconFactory)
+    public LogiDeviceViewModel CreateViewModel(Action<LogiDeviceViewModel>? config = null)
+    {
+        LogiDeviceViewModel output = new(_logiDeviceIconFactory);
+        config?.Invoke(output);
+
+        return output;
+    }
+}
+
+public partial class LogiDeviceViewModel : LogiDevice
+{
+    private readonly ILogiDeviceIconFactory _logiDeviceIconFactory;
+
+    [ObservableProperty]
+    private bool _isChecked = false;
+
+    private LogiDeviceIcon? taskbarIcon;
+
+    public LogiDeviceViewModel(ILogiDeviceIconFactory logiDeviceIconFactory)
+    {
+        _logiDeviceIconFactory = logiDeviceIconFactory;
+    }
+
+    partial void OnIsCheckedChanged(bool oldValue, bool newValue)
+    {
+        if (newValue)
         {
-            _logiDeviceIconFactory = logiDeviceIconFactory;
+            taskbarIcon ??= _logiDeviceIconFactory.CreateDeviceIcon(this);
         }
-
-        public LogiDeviceViewModel CreateViewModel(Action<LogiDeviceViewModel>? config = null)
+        else
         {
-            LogiDeviceViewModel output = new(_logiDeviceIconFactory);
-            config?.Invoke(output);
-
-            return output;
+            taskbarIcon?.Dispose();
+            taskbarIcon = null;
         }
     }
 
-    public partial class LogiDeviceViewModel : LogiDevice
+    public void UpdateState(InitMessage initMessage)
     {
-        private readonly ILogiDeviceIconFactory _logiDeviceIconFactory;
-
-        [ObservableProperty]
-        private bool _isChecked = false;
-
-        private LogiDeviceIcon? taskbarIcon;
-
-        public LogiDeviceViewModel(ILogiDeviceIconFactory logiDeviceIconFactory)
+        if (string.IsNullOrEmpty(DeviceId) || DeviceId == NOT_FOUND)
         {
-            _logiDeviceIconFactory = logiDeviceIconFactory;
+            DeviceId = initMessage.deviceId;
         }
 
-        partial void OnIsCheckedChanged(bool oldValue, bool newValue)
-        {
-            if (newValue)
-            {
-                taskbarIcon ??= _logiDeviceIconFactory.CreateDeviceIcon(this);
-            }
-            else
-            {
-                taskbarIcon?.Dispose();
-                taskbarIcon = null;
-            }
-        }
+        DeviceName = initMessage.deviceName;
+        HasBattery = initMessage.hasBattery;
+        DeviceType = initMessage.deviceType;
+    }
 
-        public void UpdateState(InitMessage initMessage)
-        {
-            if (string.IsNullOrEmpty(DeviceId) || DeviceId == NOT_FOUND)
-            {
-                DeviceId = initMessage.deviceId;
-            }
-
-            DeviceName = initMessage.deviceName;
-            HasBattery = initMessage.hasBattery;
-            DeviceType = initMessage.deviceType;
-        }
-
-        public void UpdateState(UpdateMessage updateMessage)
-        {
-            BatteryPercentage = updateMessage.batteryPercentage;
-            PowerSupplyStatus = updateMessage.powerSupplyStatus;
-            BatteryVoltage = updateMessage.batteryMVolt / 1000.0;
-            BatteryMileage = updateMessage.Mileage;
-            LastUpdate = updateMessage.updateTime;
-        }
+    public void UpdateState(UpdateMessage updateMessage)
+    {
+        BatteryPercentage = updateMessage.batteryPercentage;
+        PowerSupplyStatus = updateMessage.powerSupplyStatus;
+        BatteryVoltage = updateMessage.batteryMVolt / 1000.0;
+        BatteryMileage = updateMessage.Mileage;
+        LastUpdate = updateMessage.updateTime;
     }
 }

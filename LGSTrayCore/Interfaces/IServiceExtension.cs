@@ -1,5 +1,4 @@
 ﻿using LGSTrayCore.HttpServer;
-using LGSTrayCore.Interfaces;
 using LGSTrayCore.Managers;
 using LGSTrayCore.WebSocket;
 using LGSTrayPrimitives;
@@ -8,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using static LGSTrayPrimitives.DiagnosticLogger;
 
-namespace LGSTrayCore;
+namespace LGSTrayCore.Interfaces;
 
 public static class IServiceExtension
 {

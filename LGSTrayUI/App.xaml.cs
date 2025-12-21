@@ -1,5 +1,4 @@
-﻿using LGSTrayCore;
-using LGSTrayCore.Managers;
+﻿using LGSTrayCore.Managers;
 using LGSTrayPrimitives;
 using LGSTrayPrimitives.IPC;
 using LGSTrayPrimitives.Interfaces;
@@ -17,6 +16,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using Tommy.Extensions.Configuration;
 using static LGSTrayUI.AppExtensions;
+using LGSTrayCore.Interfaces;
 
 namespace LGSTrayUI;
 
