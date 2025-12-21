@@ -1,5 +1,7 @@
 ﻿using LGSTrayCore.HttpServer;
+using LGSTrayCore.Interfaces;
 using LGSTrayCore.Managers;
+using LGSTrayCore.WebSocket;
 using LGSTrayPrimitives;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,6 +19,12 @@ public static class IServiceExtension
 
         services.AddSingleton<HttpControllerFactory>();
         services.AddHostedService<HttpServer.HttpServer>();
+    }
+
+    public static IServiceCollection AddWebSocketClientFactory(this IServiceCollection services)
+    {
+        services.AddSingleton<IWebSocketClientFactory, WebSocketClientFactory>();
+        return services;
     }
 
     public static void AddIDeviceManager<T>(this IServiceCollection services, IConfiguration configs) where T : class, IDeviceManager, IHostedService

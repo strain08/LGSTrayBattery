@@ -1,4 +1,5 @@
-﻿using LGSTrayPrimitives;
+﻿using LGSTrayCore.Interfaces;
+using LGSTrayPrimitives;
 using LGSTrayPrimitives.MessageStructs;
 using MessagePipe;
 using Microsoft.Extensions.Hosting;
@@ -69,32 +70,23 @@ namespace LGSTrayCore.Managers
         private static partial Regex BatteryDeviceStateRegex();
 
         private readonly IPublisher<IPCMessage> _deviceEventBus;
+        private readonly IWebSocketClientFactory _wsFactory;
 
-        protected WebsocketClient? _ws;
+        protected IWebSocketClient? _ws;
 
-        public GHubManager(IPublisher<IPCMessage> deviceEventBus)
+        public GHubManager(
+            IPublisher<IPCMessage> deviceEventBus,
+            IWebSocketClientFactory wsFactory)
         {
             _deviceEventBus = deviceEventBus;
+            _wsFactory = wsFactory;
         }
 
         public async Task StartAsync(CancellationToken cancellationToken)
         {
             var url = new Uri(WEBSOCKET_SERVER);
+            _ws = _wsFactory.Create(url);
 
-            var factory = new Func<ClientWebSocket>(() =>
-            {
-                var client = new ClientWebSocket();
-                client.Options.UseDefaultCredentials = false;
-                client.Options.SetRequestHeader("Origin", "file://");
-                client.Options.SetRequestHeader("Pragma", "no-cache");
-                client.Options.SetRequestHeader("Cache-Control", "no-cache");
-                client.Options.SetRequestHeader("Sec-WebSocket-Extensions", "permessage-deflate; client_max_window_bits");
-                client.Options.SetRequestHeader("Sec-WebSocket-Protocol", "json");
-                client.Options.AddSubProtocol("json");
-                return client;
-            });
-
-            _ws = new WebsocketClient(url, factory);
             _ws.MessageReceived.Subscribe(ParseSocketMsg);
             _ws.ErrorReconnectTimeout = TimeSpan.FromMilliseconds(500);
             _ws.ReconnectTimeout = null;
@@ -167,6 +159,12 @@ namespace LGSTrayCore.Managers
                     {
                         DiagnosticLogger.Log($"Processing battery update: {ghubmsg.Path}");
                         ParseBatteryUpdate(ghubmsg.Payload);
+                        break;
+                    }
+                case "/devices/state/changed":
+                    {
+                        DiagnosticLogger.Log("Processing device state change");
+                        ParseDeviceStateChange(ghubmsg.Payload);
                         break;
                     }
                 default:
@@ -249,11 +247,66 @@ namespace LGSTrayCore.Managers
             }
         }
 
+        /// <summary>
+        /// Handle /devices/state/changed events (device connect/disconnect)
+        /// </summary>
+        protected void ParseDeviceStateChange(JObject payload)
+        {
+            try
+            {
+                string deviceId = payload["deviceId"]?.ToString() ?? "unknown";
+                string state = payload["state"]?.ToString()?.ToLower() ?? "";
+
+                DiagnosticLogger.Log($"GHUB device state change - {deviceId}: {state}");
+
+                switch (state)
+                {
+                    case "disconnected":
+                    case "offline":
+                        // Device disconnected - publish removal
+                        _deviceEventBus.Publish(new RemoveMessage(deviceId, "ghub_disconnect"));
+                        DiagnosticLogger.Log($"Device removed via GHUB disconnect - {deviceId}");
+                        break;
+
+                    case "connected":
+                    case "online":
+                        // Device reconnected - request device info to re-register
+                        DiagnosticLogger.Log($"Device reconnected - requesting info for {deviceId}");
+                        _ws?.Send(JsonConvert.SerializeObject(new
+                        {
+                            msgId = "",
+                            verb = "GET",
+                            path = $"/devices/{deviceId}"
+                        }));
+                        break;
+
+                    default:
+                        DiagnosticLogger.Log($"Unknown device state: {state}");
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                string deviceId = payload?["deviceId"]?.ToString() ?? "unknown";
+                DiagnosticLogger.LogError($"Failed to parse device state change for {deviceId}: {ex.Message}");
+            }
+        }
+
         public async void RediscoverDevices()
         {
+            // First, remove all GHUB devices to prevent duplicates
+            _deviceEventBus.Publish(new RemoveMessage("*GHUB*", "rediscover_cleanup"));
+            DiagnosticLogger.Log("Clearing all GHUB devices before rediscovery");
+
+            // Wait 100ms for removal to propagate through MessagePipe
+            await Task.Delay(100);
+
+            // Now reconnect and discover devices fresh
             using var cts = new CancellationTokenSource();
             await StopAsync(cts.Token);
             await StartAsync(cts.Token);
+
+            DiagnosticLogger.Log("GHUB device rediscovery complete");
         }
     }
 }

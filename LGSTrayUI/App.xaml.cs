@@ -2,6 +2,8 @@
 using LGSTrayCore.Managers;
 using LGSTrayPrimitives;
 using LGSTrayPrimitives.IPC;
+using LGSTrayPrimitives.Interfaces;
+using LGSTrayUI.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Notification.Wpf;
@@ -87,11 +89,13 @@ public partial class App : Application
 
         builder.Services.Configure<AppSettings>(builder.Configuration);
         builder.Services.AddLGSMessagePipe(true);
+        builder.Services.AddWebSocketClientFactory();
         builder.Services.AddSingleton<UserSettingsWrapper>();
         builder.Services.AddSingleton<INotificationManager, NotificationManager>();
 
         builder.Services.AddSingleton<LogiDeviceIconFactory>();
         builder.Services.AddSingleton<LogiDeviceViewModelFactory>();
+        builder.Services.AddSingleton<IDispatcher, WpfDispatcher>();
 
         builder.Services.AddWebserver(builder.Configuration);
 
