@@ -21,12 +21,24 @@ FILE_TYPES = [
 
 TARGET_PROJ = 'LGSTrayUI'
 PROJ_FILE = f'./{TARGET_PROJ}/{TARGET_PROJ}.csproj'
-TARGET_VER = ET.parse(PROJ_FILE).getroot() \
-                .findall('./PropertyGroup/VersionPrefix')[0].text
+
+# Parse version with error handling
+if not os.path.exists(PROJ_FILE):
+    raise FileNotFoundError(f"Project file not found: {PROJ_FILE}")
+
+root = ET.parse(PROJ_FILE).getroot()
+version_elements = root.findall('./PropertyGroup/VersionPrefix')
+if not version_elements:
+    raise ValueError(f"VersionPrefix not found in {PROJ_FILE}")
+TARGET_VER = version_elements[0].text
+if not TARGET_VER:
+    raise ValueError(f"VersionPrefix is empty in {PROJ_FILE}")
 
 def file_list(zipFolder):
     for fileType in FILE_TYPES:
-        yield from glob.glob(os.path.join(zipFolder, fileType), recursive=True)
+        # Fix: Add ** for proper recursive search
+        pattern = os.path.join(zipFolder, '**', fileType)
+        yield from glob.glob(pattern, recursive=True)
 
 def create_zip(zipPath, zipFolder):
     with zipfile.ZipFile(zipPath, 'w', zipfile.ZIP_DEFLATED) as zip:
@@ -50,7 +62,8 @@ class PublishHelper:
         for proj in ["LGSTrayHID", "LGSTrayUI"]:
             subprocess.run(
                 ["dotnet", "publish", f"{proj}/{proj}.csproj", f"/p:PublishProfile={profile}", f"/p:Version={TARGET_VER}"],
-                shell=False
+                shell=False,
+                check=True  # Raise exception on failure
             )
 
         if self.no_zip:

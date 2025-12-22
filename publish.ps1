@@ -14,10 +14,11 @@ $PublishProfiles = @(
 
 $FileTypes = @('*.exe', '*.pdb', '*.dll', '*.toml')
 $Projects = @('LGSTrayHID', 'LGSTrayUI')
-$PublishRoot = Join-Path (Join-Path (Join-Path (Join-Path '.' 'bin') 'Release') 'Publish') 'win-x64'
+# Use script directory instead of current directory for reliable path resolution
+$PublishRoot = Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot 'bin') 'Release') 'Publish') 'win-x64'
 $PublishRoot = [System.IO.Path]::GetFullPath($PublishRoot)
 $TargetProj = 'LGSTrayUI'
-$ProjFile = Join-Path (Join-Path '.' $TargetProj) "$TargetProj.csproj"
+$ProjFile = Join-Path (Join-Path $PSScriptRoot $TargetProj) "$TargetProj.csproj"
 
 # Function to read version from .csproj
 function Get-ProjectVersion {
@@ -94,7 +95,7 @@ try {
 
         # Build each project
         foreach ($proj in $Projects) {
-            $projPath = Join-Path $proj "$proj.csproj"
+            $projPath = Join-Path (Join-Path $PSScriptRoot $proj) "$proj.csproj"
 
             Write-Host "  Building $proj..."
             & dotnet publish $projPath "/p:PublishProfile=$publishProfile" "/p:Version=$version"
