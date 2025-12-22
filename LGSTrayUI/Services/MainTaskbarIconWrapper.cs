@@ -1,5 +1,6 @@
 ﻿using Hardcodet.Wpf.TaskbarNotification;
 using System;
+using System.Threading;
 using System.Windows;
 
 namespace LGSTrayUI.Services;
@@ -50,8 +51,8 @@ public class MainTaskbarIconWrapper : IDisposable
     #endregion
 
     private TaskbarIcon? _taskbarIcon = new MainTaskBarIcon();
-    private System.Threading.Timer? _debounceTimer;
-    private readonly object _timerLock = new object();
+    private Timer? _debounceTimer;
+    private readonly object _timerLock = new();
     private int _timerVersion = 0;  // Track timer generations to detect stale callbacks
 
     public MainTaskbarIconWrapper()
@@ -69,47 +70,47 @@ public class MainTaskbarIconWrapper : IDisposable
             _debounceTimer = null;
             _timerVersion++;  // Increment to invalidate any pending callbacks
 
-            if (refCount == 0)
-            {
-                // Debounce: Wait 500ms before showing main icon
-                // This prevents unnecessary creation/disposal during rediscover
-                var currentVersion = _timerVersion;
-
-                _debounceTimer = new System.Threading.Timer(_ =>
-                {
-                    // Check if this timer was cancelled before acquiring lock
-                    bool isStale;
-                    lock (_timerLock)
-                    {
-                        isStale = currentVersion != _timerVersion;
-                    }
-
-                    if (isStale)
-                        return;  // Stale callback, ignore
-
-                    Application.Current.Dispatcher.Invoke(() =>
-                    {
-                        lock (_timerLock)
-                        {
-                            // Final check: ensure timer is still valid and count is still 0
-                            if (currentVersion == _timerVersion &&
-                                LogiDeviceIcon.RefCount == 0 &&
-                                _taskbarIcon == null)
-                            {
-                                _taskbarIcon = new MainTaskBarIcon();
-                            }
-                        }
-                    });
-                }, state: null,
-                   dueTime: 500,
-                   period: System.Threading.Timeout.Infinite);
-            }
-            else
+            if (refCount != 0)
             {
                 // Immediately hide main icon when device icons appear
                 _taskbarIcon?.Dispose();
                 _taskbarIcon = null;
+                return;
             }
+
+            // Debounce: Wait 500ms before showing main icon
+            // This prevents unnecessary creation/disposal during rediscover
+            var currentVersion = _timerVersion;
+
+            _debounceTimer = new Timer(_ =>
+            {
+                // Quick check under lock to detect stale timer
+                lock (_timerLock)
+                {
+                    if (currentVersion != _timerVersion)
+                        return; // Stale callback, ignore
+                }
+
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    lock (_timerLock)
+                    {
+                        // Final safety checks with early returns to reduce nesting
+                        if (currentVersion != _timerVersion)
+                            return;
+
+                        if (LogiDeviceIcon.RefCount != 0)
+                            return;
+
+                        if (_taskbarIcon != null)
+                            return;
+
+                        _taskbarIcon = new MainTaskBarIcon();
+                    }
+                });
+            }, state: null,
+               dueTime: 500,
+               period: Timeout.Infinite);
         }
     }
 }

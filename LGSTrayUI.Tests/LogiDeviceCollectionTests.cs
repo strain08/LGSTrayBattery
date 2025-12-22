@@ -1,5 +1,6 @@
 using LGSTrayPrimitives;
 using LGSTrayPrimitives.MessageStructs;
+using LGSTrayUI.Services;
 using LGSTrayUI.Tests.Mocks;
 
 namespace LGSTrayUI.Tests;
