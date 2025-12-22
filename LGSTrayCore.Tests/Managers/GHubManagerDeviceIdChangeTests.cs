@@ -1,7 +1,6 @@
 using LGSTrayCore.Managers;
 using LGSTrayCore.Tests.Mocks;
 using LGSTrayPrimitives.MessageStructs;
-using LGSTrayPrimitives;
 
 namespace LGSTrayCore.Tests.Managers;
 

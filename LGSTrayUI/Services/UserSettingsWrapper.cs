@@ -1,7 +1,7 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using System.Collections.Specialized;
 
-namespace LGSTrayUI;
+namespace LGSTrayUI.Services;
 
 public partial class UserSettingsWrapper : ObservableObject
 {

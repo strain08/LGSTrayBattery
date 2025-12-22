@@ -1,13 +1,13 @@
-﻿using LGSTrayCore;
+﻿using Hardcodet.Wpf.TaskbarNotification;
+using LGSTrayCore;
+using LGSTrayPrimitives;
 using LGSTrayUI.Properties;
+using Microsoft.Win32;
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
-using Hardcodet.Wpf.TaskbarNotification;
 using System.Runtime.InteropServices;
-using LGSTrayPrimitives;
-using Microsoft.Win32;
 
 namespace LGSTrayUI;
 /// <summary>
@@ -121,14 +121,14 @@ public static partial class BatteryIconDrawing
             Bitmap chargingOverlay = Charging;
 
             // Scale overlay
-            int overlaySize = (int)(ImageSize* 1.50 );
+            int overlaySize = (int)(ImageSize * 1.50);
 
             // Position at bottom-center corner with small margin                
-            int marginLeft = - (int)(ImageSize * 0.30);
+            int marginLeft = -(int)(ImageSize * 0.30);
             int marginTop = (int)(ImageSize * 0.50);
             int x = ImageSize - overlaySize + marginLeft;
             int y = ImageSize - overlaySize + marginTop;
-            
+
 
             Rectangle overlayRect = new(x, y, overlaySize, overlaySize);
 

@@ -1,5 +1,4 @@
-﻿using MessagePipe;
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 
 namespace LGSTrayPrimitives.IPC;
 

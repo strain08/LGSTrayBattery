@@ -1,5 +1,4 @@
 ﻿//#define PRINT
-using System.Threading.Channels;
 using static LGSTrayHID.HidApi.HidApi;
 
 namespace LGSTrayHID.HidApi;

@@ -1,9 +1,6 @@
 using LGSTrayHID.Lifecycle;
 using LGSTrayPrimitives;
 using LGSTrayPrimitives.MessageStructs;
-using System;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace LGSTrayHID.Routing;
 

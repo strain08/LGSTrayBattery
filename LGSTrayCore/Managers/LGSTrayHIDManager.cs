@@ -1,11 +1,9 @@
-﻿using LGSTrayPrimitives.MessageStructs;
+﻿using LGSTrayCore.Interfaces;
 using LGSTrayPrimitives;
-using MessagePack.Resolvers;
+using LGSTrayPrimitives.MessageStructs;
 using MessagePipe;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Options;
 using System.Diagnostics;
-using LGSTrayCore.Interfaces;
 
 namespace LGSTrayCore.Managers;
 

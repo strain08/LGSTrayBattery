@@ -1,6 +1,5 @@
 using LGSTrayCore;
 using LGSTrayUI.Interfaces;
-using System;
 
 namespace LGSTrayUI.Tests.Mocks;
 

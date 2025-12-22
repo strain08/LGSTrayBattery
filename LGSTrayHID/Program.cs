@@ -1,9 +1,9 @@
-﻿using Microsoft.Extensions.Hosting;
-using System.Diagnostics;
-using Microsoft.Extensions.DependencyInjection;
+﻿using LGSTrayPrimitives;
 using LGSTrayPrimitives.IPC;
 using Microsoft.Extensions.Configuration;
-using LGSTrayPrimitives;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using System.Diagnostics;
 using Tommy.Extensions.Configuration;
 
 namespace LGSTrayHID;
@@ -40,9 +40,10 @@ internal class Program
         _ = Task.Run(async () =>
         {
             bool ret = int.TryParse(args.ElementAtOrDefault(0), out int parentPid);
-            if (!ret) {
+            if (!ret)
+            {
 #if DEBUG
-                return; 
+                return;
 #else
                 // Started without a parent, assume invalid.
                 Environment.Exit(0);

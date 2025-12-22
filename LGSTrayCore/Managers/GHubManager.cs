@@ -6,8 +6,6 @@ using Microsoft.Extensions.Hosting;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Swan;
-using System.Diagnostics;
-using System.Net.WebSockets;
 using System.Text.RegularExpressions;
 using Websocket.Client;
 
@@ -199,7 +197,7 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
                 _deviceEventBus.Publish(new InitMessage(
                     deviceId,
                     deviceName,
-                    (bool) deviceToken["capabilities"]!["hasBatteryStatus"]!,
+                    (bool)deviceToken["capabilities"]!["hasBatteryStatus"]!,
                     deviceType
                 ));
 

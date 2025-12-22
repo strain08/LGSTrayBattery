@@ -5,7 +5,6 @@ using LGSTrayPrimitives;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using static LGSTrayPrimitives.DiagnosticLogger;
 
 namespace LGSTrayCore.Interfaces;
 

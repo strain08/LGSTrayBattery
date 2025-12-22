@@ -1,10 +1,10 @@
-﻿using static LGSTrayHID.HidApi.HidApi;
-using static LGSTrayHID.HidApi.HidApiWinApi;
-using static LGSTrayHID.HidApi.HidApiHotPlug;
-using LGSTrayHID.HidApi;
-using System.Collections.Concurrent;
+﻿using LGSTrayHID.HidApi;
 using LGSTrayPrimitives;
 using LGSTrayPrimitives.MessageStructs;
+using System.Collections.Concurrent;
+using static LGSTrayHID.HidApi.HidApi;
+using static LGSTrayHID.HidApi.HidApiHotPlug;
+using static LGSTrayHID.HidApi.HidApiWinApi;
 
 namespace LGSTrayHID;
 
@@ -21,7 +21,7 @@ public sealed class HidppManagerContext
 
     public event HidppDeviceEventHandler? HidppDeviceEvent;
 
-    private HidppManagerContext() {  }
+    private HidppManagerContext() { }
 
     static HidppManagerContext()
     {

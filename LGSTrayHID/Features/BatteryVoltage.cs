@@ -1,4 +1,3 @@
-using LGSTrayPrimitives;
 using LGSTrayHID.Protocol;
 
 namespace LGSTrayHID.Features;
@@ -51,7 +50,7 @@ public class BatteryVoltage : IBatteryFeature
         // Send command and wait for response
         Hidpp20 response = await device.Parent.WriteRead20(
             device.Parent.DevShort,
-            command, 
+            command,
             QueryTimeout);
 
         // Check if request timed out or failed

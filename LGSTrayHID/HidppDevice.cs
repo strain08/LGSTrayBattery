@@ -1,9 +1,9 @@
-﻿using LGSTrayPrimitives;
-using LGSTrayPrimitives.MessageStructs;
+﻿using LGSTrayHID.Battery;
 using LGSTrayHID.Features;
-using LGSTrayHID.Protocol;
 using LGSTrayHID.Metadata;
-using LGSTrayHID.Battery;
+using LGSTrayHID.Protocol;
+using LGSTrayPrimitives;
+using LGSTrayPrimitives.MessageStructs;
 
 
 namespace LGSTrayHID;
@@ -32,7 +32,7 @@ public class HidppDevice : IDisposable
 
     // Disposal and cancellation support
     private readonly CancellationTokenSource _cancellationSource = new();
-    
+
     private Task? _pollingTask;
     private readonly CancellationTokenSource _poolingCts = new();
 
@@ -126,9 +126,9 @@ public class HidppDevice : IDisposable
                 ushort featureId = ret.GetFeatureId();
 
                 FeatureMap[featureId] = i;
-                
+
                 // Log feature mapping for debugging connection events
-                DiagnosticLogger.Log($"[Device {DeviceIdx}] Feature 0x{featureId:X04} mapped to index {i}");                    
+                DiagnosticLogger.Log($"[Device {DeviceIdx}] Feature 0x{featureId:X04} mapped to index {i}");
             }
 
             await InitPopulateAsync();
@@ -164,7 +164,7 @@ public class HidppDevice : IDisposable
             DiagnosticLogger.LogWarning($"HID device index {DeviceIdx} missing feature 0x0005 (device name), ignoring");
             return;
         }
-        
+
         // Device identifier
         if (FeatureMap.TryGetValue(HidppFeature.DEVICE_FW_INFO, out featureId))
         {
@@ -225,7 +225,7 @@ public class HidppDevice : IDisposable
         if (_batteryFeature == null) return;
 
         // Start battery polling loop with cancellation support
-        _pollingTask = Task.Run(() => PollBattery(_cancellationSource.Token, _poolingCts.Token), _cancellationSource.Token);        
+        _pollingTask = Task.Run(() => PollBattery(_cancellationSource.Token, _poolingCts.Token), _cancellationSource.Token);
 
     }
 
@@ -266,16 +266,18 @@ public class HidppDevice : IDisposable
 
     public async Task UpdateBattery(bool forceIpcUpdate = false)
     {
-        if (_batteryFeature == null) {
+        if (_batteryFeature == null)
+        {
             DiagnosticLogger.Log($"[{DeviceName}] No battery feature available, skipping battery update.");
             return;
         }
 
         var ret = await _batteryFeature.GetBatteryAsync(this);
 
-        if (ret == null) { 
+        if (ret == null)
+        {
             DiagnosticLogger.Log($"[{DeviceName}] Battery update returned null, skipping.");
-            return; 
+            return;
         }
 
         var batStatus = ret.Value;

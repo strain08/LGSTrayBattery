@@ -1,7 +1,8 @@
-﻿using LGSTrayCore.Managers;
+﻿using LGSTrayCore.Interfaces;
+using LGSTrayCore.Managers;
 using LGSTrayPrimitives;
-using LGSTrayPrimitives.IPC;
 using LGSTrayPrimitives.Interfaces;
+using LGSTrayPrimitives.IPC;
 using LGSTrayUI.Interfaces;
 using LGSTrayUI.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,7 +17,6 @@ using System.Threading.Tasks;
 using System.Windows;
 using Tommy.Extensions.Configuration;
 using static LGSTrayUI.AppExtensions;
-using LGSTrayCore.Interfaces;
 
 namespace LGSTrayUI;
 
@@ -39,7 +39,7 @@ public partial class App : Application
 
     protected override async void OnStartup(StartupEventArgs e)
     {
-        const string mutexName = "LGSTrayBattery_SingleInstance";       
+        const string mutexName = "LGSTrayBattery_SingleInstance";
 
         // The 'true' here attempts to acquire ownership immediately
         _mutex = new Mutex(true, mutexName, out _hasHandle);
@@ -90,7 +90,7 @@ public partial class App : Application
 
         var builder = Host.CreateEmptyApplicationBuilder(null);
         await LoadAppSettings(builder.Configuration);
-        
+
 
         builder.Services.Configure<AppSettings>(builder.Configuration);
         builder.Services.AddLGSMessagePipe(true);
@@ -107,7 +107,7 @@ public partial class App : Application
         builder.Services.AddIDeviceManager<LGSTrayHIDManager>(builder.Configuration);
         builder.Services.AddIDeviceManager<GHubManager>(builder.Configuration);
         builder.Services.AddSingleton<ILogiDeviceCollection, LogiDeviceCollection>();
-        
+
 
         builder.Services.AddSingleton<MainTaskbarIconWrapper>();
         builder.Services.AddHostedService<NotifyIconViewModel>();
@@ -147,8 +147,8 @@ public partial class App : Application
             if (ex is FileNotFoundException || ex is InvalidDataException)
             {
                 var msgBoxRet = MessageBox.Show(
-                    "Failed to read settings, do you want reset to default?", 
-                    "LGSTray - Settings Load Error", 
+                    "Failed to read settings, do you want reset to default?",
+                    "LGSTray - Settings Load Error",
                     MessageBoxButton.YesNo, MessageBoxImage.Error, MessageBoxResult.No
                 );
 

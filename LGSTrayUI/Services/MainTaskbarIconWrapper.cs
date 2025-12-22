@@ -2,7 +2,7 @@
 using System;
 using System.Windows;
 
-namespace LGSTrayUI;
+namespace LGSTrayUI.Services;
 
 /// <summary>
 /// Manages the application's main taskbar icon, automatically showing or hiding it based on the presence of device
@@ -100,7 +100,9 @@ public class MainTaskbarIconWrapper : IDisposable
                             }
                         }
                     });
-                }, null, 500, System.Threading.Timeout.Infinite);
+                }, state: null,
+                   dueTime: 500,
+                   period: System.Threading.Timeout.Infinite);
             }
             else
             {

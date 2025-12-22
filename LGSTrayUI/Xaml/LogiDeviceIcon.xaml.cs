@@ -2,6 +2,7 @@
 using LGSTrayCore;
 using LGSTrayPrimitives;
 using LGSTrayUI.Interfaces;
+using LGSTrayUI.Services;
 using Microsoft.Extensions.Options;
 using System;
 using System.ComponentModel;

@@ -1,5 +1,4 @@
 using LGSTrayHID.Protocol;
-using LGSTrayPrimitives;
 
 namespace LGSTrayHID.Features;
 

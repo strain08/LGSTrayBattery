@@ -4,7 +4,6 @@ using LGSTrayHID.Lifecycle;
 using LGSTrayHID.Protocol;
 using LGSTrayHID.Routing;
 using LGSTrayPrimitives;
-using System.Data;
 using System.Threading.Channels;
 
 namespace LGSTrayHID;
@@ -32,7 +31,7 @@ public class HidppReceiver : IDisposable
         SingleWriter = false, // Fix: 2 writers (SHORT + LONG read threads)
     });
     private readonly CommandResponseCorrelator _correlator;
-    
+
 
     private int _disposeCount = 0;
     public bool Disposed => _disposeCount > 0;
@@ -47,9 +46,9 @@ public class HidppReceiver : IDisposable
         _enumerator = new DeviceEnumerator(this, _lifecycleManager);
     }
 
-    
+
     public async Task SetUp(HidppMessageType messageType, nint dev)
-    {            
+    {
         switch (messageType)
         {
             case HidppMessageType.SHORT:
@@ -137,9 +136,9 @@ public class HidppReceiver : IDisposable
         {
             // This enables the receiver to send 0x41 announcements when devices turn on/off
             // Same command as per-device battery enable, but sent to receiver index 0xFF
-          //  var enableReceiverNotifications = Hidpp10Commands.EnableBatteryReports(0xFF);
-         //   byte[] ret = await WriteRead10(DevShort, enableReceiverNotifications, 1000);
-          //  DiagnosticLogger.Log($"Receiver EnableBatteryReports response: {BitConverter.ToString(ret)}");
+            //  var enableReceiverNotifications = Hidpp10Commands.EnableBatteryReports(0xFF);
+            //   byte[] ret = await WriteRead10(DevShort, enableReceiverNotifications, 1000);
+            //  DiagnosticLogger.Log($"Receiver EnableBatteryReports response: {BitConverter.ToString(ret)}");
 
             // Also try enabling all notification types (battery + wireless + others)
             byte[] enableAllReports = Hidpp10Commands.EnableAllReports(0xFF);

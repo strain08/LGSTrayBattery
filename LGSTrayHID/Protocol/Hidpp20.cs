@@ -8,7 +8,7 @@ public readonly struct Hidpp20
     {
         _data = data;
     }
-    
+
     // conversion to/from byte array
     public static explicit operator byte[](Hidpp20 msg) => msg._data;
     public static implicit operator Hidpp20(byte[] data) => new(data);
@@ -57,7 +57,7 @@ public readonly struct Hidpp20
     /// 2. Not matched to a pending WriteRead20 request (caller's responsibility)
     /// 3. Feature index matches a known battery feature (0x1000, 0x1001, 0x1004)
     /// </remarks>
-    public bool IsBatteryEvent(byte featureIndex) => 
+    public bool IsBatteryEvent(byte featureIndex) =>
                 GetFeatureIndex() == featureIndex && GetFunctionId() == BatteryEventFunction.BATTERY_STATUS_BROADCAST;
 
     /// <summary>
@@ -69,8 +69,8 @@ public readonly struct Hidpp20
     /// CRITICAL: Always check IsDJNotification() BEFORE checking IsDeviceAnnouncement()
     /// to avoid 0x41 disambiguation issues. DJ 0x41 (device paired) vs HID++ 0x41 (announcement).
     /// </remarks>
-    public bool IsDJNotification() => 
-               _data[0] == DJProtocol.REPORT_ID_SHORT || 
+    public bool IsDJNotification() =>
+               _data[0] == DJProtocol.REPORT_ID_SHORT ||
                _data[0] == DJProtocol.REPORT_ID_LONG;
 
     /// <summary>

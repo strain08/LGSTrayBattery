@@ -1,7 +1,6 @@
 using LGSTrayHID.Lifecycle;
 using LGSTrayHID.Protocol;
 using System.Threading.Channels;
-using System.Threading.Tasks;
 
 namespace LGSTrayHID.Routing;
 
@@ -62,12 +61,12 @@ public class HidMessageRouter
     private async Task<bool> TryRouteAsDeviceEventAsync(Hidpp20 message)
     {
         byte deviceIdx = message.GetDeviceIdx();
-        
+
         if (!_lifecycleManager.TryGetDevice(deviceIdx, out HidppDevice? device))
         {
             return false; // Device not found
         }
-        
+
         if (device is null)
         {
             return false; // Device not found

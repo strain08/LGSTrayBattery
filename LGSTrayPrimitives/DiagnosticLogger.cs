@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace LGSTrayPrimitives;
@@ -120,9 +119,9 @@ public static class DiagnosticLogger
 
     private static void WriteToConsole(string formatted)
     {
-        #if DEBUG
+#if DEBUG
         Console.WriteLine(formatted);
-        #endif
+#endif
     }
 
 

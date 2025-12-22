@@ -1,8 +1,6 @@
 using LGSTrayHID.Lifecycle;
 using LGSTrayHID.Protocol;
 using LGSTrayPrimitives;
-using System;
-using System.Threading.Tasks;
 
 namespace LGSTrayHID.Initialization;
 

@@ -2,6 +2,7 @@
 using CommunityToolkit.Mvvm.Input;
 using LGSTrayCore;
 using LGSTrayCore.Interfaces;
+using LGSTrayUI.Services;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Win32;
 using System;

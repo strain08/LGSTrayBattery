@@ -1,5 +1,4 @@
-﻿using LGSTrayPrimitives;
-using LGSTrayPrimitives.MessageStructs;
+﻿using LGSTrayPrimitives.MessageStructs;
 using MessagePipe;
 using Microsoft.Extensions.Hosting;
 

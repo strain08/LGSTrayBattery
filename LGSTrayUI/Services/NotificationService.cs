@@ -8,14 +8,11 @@ using Notification.Wpf;
 using Notification.Wpf.Constants;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows;
 
-namespace LGSTrayUI;
+namespace LGSTrayUI.Services;
 
 public class NotificationService : IHostedService
 {
@@ -26,13 +23,13 @@ public class NotificationService : IHostedService
     private IDisposable? _subscription;
 
     // Track the last threshold at which we notified for each device
-    private readonly Dictionary<string, int> _lastNotifiedThreshold = new();
+    private readonly Dictionary<string, int> _lastNotifiedThreshold = [];
 
     // Track the last charging state for each device
-    private readonly Dictionary<string, bool> _lastChargingState = new();
+    private readonly Dictionary<string, bool> _lastChargingState = [];
 
     // Track the last online state for each device
-    private readonly Dictionary<string, bool> _lastOnlineState = new();
+    private readonly Dictionary<string, bool> _lastOnlineState = [];
 
     public NotificationService(
         INotificationManager notificationManager,

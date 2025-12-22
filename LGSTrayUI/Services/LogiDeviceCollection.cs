@@ -3,6 +3,7 @@ using LGSTrayCore.Interfaces;
 using LGSTrayPrimitives;
 using LGSTrayPrimitives.Interfaces;
 using LGSTrayPrimitives.MessageStructs;
+using LGSTrayUI.Services;
 using MessagePipe;
 using System;
 using System.Collections.Generic;
@@ -10,7 +11,6 @@ using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading.Tasks;
-using System.Windows;
 
 namespace LGSTrayUI;
 

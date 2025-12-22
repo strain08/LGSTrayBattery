@@ -1,10 +1,6 @@
 using LGSTrayHID.HidApi;
 using LGSTrayHID.Routing;
 using LGSTrayPrimitives;
-using System;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
 using static LGSTrayHID.HidApi.HidApi;
 

@@ -1,6 +1,6 @@
+using LGSTrayHID.Features;
 using LGSTrayPrimitives;
 using LGSTrayPrimitives.MessageStructs;
-using LGSTrayHID.Features;
 
 namespace LGSTrayHID.Battery;
 
