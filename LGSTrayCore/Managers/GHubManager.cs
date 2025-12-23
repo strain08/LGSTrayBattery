@@ -93,13 +93,13 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
         _ws.ReconnectTimeout = null;
         _ws.DisconnectionHappened.Subscribe(info =>
         {
-            DiagnosticLogger.LogWarning($"LGHUB WebSocket disconnected: {info.Type}");
+            DiagnosticLogger.LogWarning($"GHUB WebSocket disconnected: {info.Type}");
             DiagnosticLogger.Log("Clearing all GHUB devices.");
             _deviceEventBus.Publish(new RemoveMessage("*GHUB*", "rediscover_cleanup"));
         });
         _ws.ReconnectionHappened.Subscribe(info =>
         {
-            DiagnosticLogger.Log("LGHUB WebSocket reconnected, reloading devices");
+            DiagnosticLogger.Log("GHUB WebSocket reconnected, reloading devices");
             if (info.Type != ReconnectionType.Initial) RediscoverDevices();
         });
 
@@ -110,12 +110,12 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
         }
         catch (Websocket.Client.Exceptions.WebsocketException ex)
         {
-            DiagnosticLogger.LogError($"Failed to connect to LGHUB: {ex.Message}");
+            DiagnosticLogger.LogError($"Failed to connect to GHUB: {ex.Message}");
             this.Dispose();
             return;
         }
 
-        DiagnosticLogger.Log("Connected to LGHUB successfully");
+        DiagnosticLogger.Log("Connected to GHUB successfully");
 
         _ws.Send(JsonConvert.SerializeObject(new
         {
@@ -131,7 +131,7 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
             path = "/battery/state/changed"
         }));
 
-        DiagnosticLogger.Log("Requesting device list from LGHUB");
+        DiagnosticLogger.Log("Requesting device list from GHUB");
         LoadDevices();
     }
 
@@ -155,17 +155,17 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
     protected void ParseSocketMsg(ResponseMessage msg)
     {
         GHUBMsg ghubmsg = GHUBMsg.DeserializeJson(msg.Text!);
-        DiagnosticLogger.Log($"LGHUB message received - Path: {ghubmsg.Path}");
+        DiagnosticLogger.Log($"GHUB message received - Path: {ghubmsg.Path}");
         //DiagnosticLogger.Log($"Full message: {msg.Text}");
 
         switch (ghubmsg.Path)
         {
             case "/devices/list":
                 {
-                    DiagnosticLogger.Log("Processing /devices/list response");
+                    DiagnosticLogger.Log("GHUB Processing /devices/list response");
                     if (ghubmsg.Payload == null)
                     {
-                        DiagnosticLogger.LogWarning("Received /devices/list with null payload");
+                        DiagnosticLogger.LogWarning("GHUB Received /devices/list with null payload");
                         break;
                     }
                     LoadDevices(ghubmsg.Payload);
@@ -174,10 +174,10 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
             case "/battery/state/changed":
             case { } when BatteryDeviceStateRegex().IsMatch(ghubmsg.Path):
                 {
-                    DiagnosticLogger.Log($"Processing battery update: {ghubmsg.Path}");
+                    DiagnosticLogger.Log($"GHUB Processing battery update: {ghubmsg.Path}");
                     if (ghubmsg.Payload == null)
                     {
-                        DiagnosticLogger.LogWarning($"Received battery update with null payload: {ghubmsg.Path}");
+                        DiagnosticLogger.LogWarning($"GHUB Received battery update with null payload: {ghubmsg.Path}");
                         break;
                     }
                     ParseBatteryUpdate(ghubmsg.Payload);
@@ -185,7 +185,7 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
                 }
             case "/devices/state/changed":
                 {
-                    DiagnosticLogger.Log("Processing device state change");
+                    DiagnosticLogger.Log("GHUB Processing device state change");
                     if (ghubmsg.Payload == null)
                     {
                         DiagnosticLogger.LogWarning("Received device state change with null payload");
@@ -212,7 +212,7 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
             }
 
             int deviceCount = deviceInfos.Count();
-            DiagnosticLogger.Log($"LGHUB reported {deviceCount} device(s)");
+            DiagnosticLogger.Log($"GHUB reported {deviceCount} device(s)");
 
             foreach (var deviceToken in deviceInfos)
             {
@@ -324,7 +324,7 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
         catch (Exception ex)
         {
             string deviceId = payload?["deviceId"]?.ToString() ?? "unknown";
-            DiagnosticLogger.LogError($"Failed to parse battery update for device {deviceId}: {ex.Message}");
+            DiagnosticLogger.LogError($"GHUB Failed to parse battery update for device {deviceId}: {ex.Message}");
         }
     }
 
