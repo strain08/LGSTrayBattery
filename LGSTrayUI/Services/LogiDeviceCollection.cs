@@ -108,6 +108,7 @@ public class LogiDeviceCollection : ILogiDeviceCollection
             // Device already exists - just update it
             if (dev != null)
             {
+                DiagnosticLogger.Log($"Device already exists, updating - {initMessage.deviceId} ({initMessage.deviceName})");
                 dev.UpdateState(initMessage);
 
                 // Restore IsChecked from settings if device was previously selected
@@ -118,6 +119,19 @@ public class LogiDeviceCollection : ILogiDeviceCollection
                     DiagnosticLogger.Log($"Restored selection state for existing device - {initMessage.deviceId}");
                 }
 
+                return;
+            }
+
+            // Check for duplicate device name in same data source (different ID)
+            var dataSource = DataSourceHelper.GetDataSource(initMessage.deviceId);
+            var duplicateByName = Devices.FirstOrDefault(x =>
+                x.DeviceName == initMessage.deviceName &&
+                x.DataSource == dataSource &&
+                x.DeviceId != initMessage.deviceId);
+
+            if (duplicateByName != null)
+            {
+                DiagnosticLogger.LogWarning($"Duplicate device detected - same name '{initMessage.deviceName}' but different IDs: existing '{duplicateByName.DeviceId}' vs new '{initMessage.deviceId}'. Ignoring new registration.");
                 return;
             }
 

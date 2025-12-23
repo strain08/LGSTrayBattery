@@ -27,18 +27,6 @@ public partial class NotifyIconViewModel : ObservableObject, IHostedService
     [ObservableProperty]
     private ObservableCollection<LogiDeviceViewModel> _logiDevices;
 
-    [ObservableProperty]
-    private ObservableCollection<LogiDeviceViewModel> _nativeDevices = new();
-
-    [ObservableProperty]
-    private ObservableCollection<LogiDeviceViewModel> _gHubDevices = new();
-
-    [ObservableProperty]
-    private bool _nativeMenuVisible = true;
-
-    [ObservableProperty]
-    private bool _gHubMenuVisible = true;
-
     private readonly UserSettingsWrapper _userSettings;
     private readonly AppSettings _appSettings;
     public bool NumericDisplay
@@ -120,14 +108,6 @@ public partial class NotifyIconViewModel : ObservableObject, IHostedService
         _userSettings = userSettings;
         _deviceManagers = deviceManagers;
         _appSettings = appSettings;
-
-        // Set menu visibility from settings
-        NativeMenuVisible = _appSettings.Native.Enabled;
-        GHubMenuVisible = _appSettings.GHub.Enabled;
-
-        // Subscribe to collection changes to update filtered views
-        _logiDevices.CollectionChanged += LogiDevices_CollectionChanged;
-        UpdateFilteredCollections();
     }
 
     [RelayCommand]
@@ -181,25 +161,5 @@ public partial class NotifyIconViewModel : ObservableObject, IHostedService
     {
         _mainTaskbarIconWrapper.Dispose();
         return Task.CompletedTask;
-    }
-
-    private void LogiDevices_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
-    {
-        UpdateFilteredCollections();
-    }
-
-    private void UpdateFilteredCollections()
-    {
-        // Update Native devices
-        var nativeDevs = LogiDevices.Where(d => d.DataSource == DataSource.Native).ToList();
-        NativeDevices.Clear();
-        foreach (var dev in nativeDevs)
-            NativeDevices.Add(dev);
-
-        // Update GHub devices
-        var ghubDevs = LogiDevices.Where(d => d.DataSource == DataSource.GHub).ToList();
-        GHubDevices.Clear();
-        foreach (var dev in ghubDevs)
-            GHubDevices.Add(dev);
     }
 }
