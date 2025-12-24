@@ -49,10 +49,11 @@ public partial class LogiDevice : ObservableObject
         {
             string statusText = BatteryPercentage < 0 ? "Offline" : $"{BatteryPercentage}%";
             string chargingText = PowerSupplyStatus == PowerSupplyStatus.POWER_SUPPLY_STATUS_CHARGING ? " (Charging)" : "";
+            string sourceText = DataSource == DataSource.GHub ? " (G)" : "(N)";
 #if DEBUG
-            return $"{DeviceName}{chargingText}, {statusText} - {LastUpdate}";
+            return $"{sourceText} {DeviceName}{chargingText}, {statusText} - {LastUpdate}";
 #else
-            return $"{DeviceName}, {statusText}{chargingText}";
+            return $"{sourceText} {DeviceName}, {statusText}{chargingText}";
 #endif
         }
     }
