@@ -61,7 +61,7 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
         GC.SuppressFinalize(this);
     }
     #endregion
-
+    // Time out for reconnect attempts (ms)
     const double RECONNECT_TIMEOUT = 15000;
 
     private const string WEBSOCKET_SERVER = "ws://localhost:9010";

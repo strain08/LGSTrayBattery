@@ -10,17 +10,28 @@ namespace LGSTrayCore.Tests.Mocks;
 /// </summary>
 public class MockWebSocketClient : IWebSocketClient
 {
-    private Subject<ResponseMessage> _messageSubject = new();
+    private Subject<ResponseMessage> _messageSubject;
+    private Subject<DisconnectionInfo> _disconnectionSubject;
+    private Subject<ReconnectionInfo> _reconnectionSubject;
     private bool _disposed;
+
+    public MockWebSocketClient()
+    {
+        _messageSubject = new Subject<ResponseMessage>();
+        _disconnectionSubject = new Subject<DisconnectionInfo>();
+        _reconnectionSubject = new Subject<ReconnectionInfo>();
+    }
 
     public IObservable<ResponseMessage> MessageReceived
     {
         get
         {
-            // Recreate Subject if disposed (handles RediscoverDevices scenario)
-            if (_disposed || _messageSubject == null)
+            // Auto-recreate subject if disposed (handles RediscoverDevices scenario)
+            if (_disposed && _messageSubject != null)
             {
                 _messageSubject = new Subject<ResponseMessage>();
+                _disconnectionSubject = new Subject<DisconnectionInfo>();
+                _reconnectionSubject = new Subject<ReconnectionInfo>();
                 _disposed = false;
             }
             return _messageSubject;
@@ -32,26 +43,67 @@ public class MockWebSocketClient : IWebSocketClient
     public TimeSpan? ReconnectTimeout { get; set; }
     public TimeSpan? ErrorReconnectTimeout { get; set; }
 
+    public IObservable<DisconnectionInfo> DisconnectionHappened
+    {
+        get
+        {
+            // Auto-recreate subject if disposed (handles RediscoverDevices scenario)
+            if (_disposed && _disconnectionSubject != null)
+            {
+                _messageSubject = new Subject<ResponseMessage>();
+                _disconnectionSubject = new Subject<DisconnectionInfo>();
+                _reconnectionSubject = new Subject<ReconnectionInfo>();
+                _disposed = false;
+            }
+            return _disconnectionSubject;
+        }
+    }
+
+    public IObservable<ReconnectionInfo> ReconnectionHappened
+    {
+        get
+        {
+            // Auto-recreate subject if disposed (handles RediscoverDevices scenario)
+            if (_disposed && _reconnectionSubject != null)
+            {
+                _messageSubject = new Subject<ResponseMessage>();
+                _disconnectionSubject = new Subject<DisconnectionInfo>();
+                _reconnectionSubject = new Subject<ReconnectionInfo>();
+                _disposed = false;
+            }
+            return _reconnectionSubject;
+        }
+    }
+
     public void Send(string message) => SentMessages.Add(message);
 
     public Task Start()
     {
-        // If we were disposed, recreate the subject
-        if (_disposed)
-        {
-            _messageSubject = new Subject<ResponseMessage>();
-            _disposed = false;
-        }
+        // Subjects are auto-recreated by property accessors if disposed
+        // Just return success
         return Task.CompletedTask;
     }
 
-    public Task Stop() => Task.CompletedTask;
+    public Task Stop()
+    {
+        // Stop doesn't dispose - allows restart
+        return Task.CompletedTask;
+    }
 
     public void Dispose()
     {
         if (!_disposed)
         {
+            // Complete the subjects to signal no more messages
+            _messageSubject?.OnCompleted();
+            _disconnectionSubject?.OnCompleted();
+            _reconnectionSubject?.OnCompleted();
+
+            // Dispose the subjects
             _messageSubject?.Dispose();
+            _disconnectionSubject?.Dispose();
+            _reconnectionSubject?.Dispose();
+
             _disposed = true;
         }
         GC.SuppressFinalize(this);
@@ -94,9 +146,21 @@ public class MockWebSocketClient : IWebSocketClient
     /// <summary>
     /// Simulate GHUB /devices/state/changed event
     /// </summary>
-    public void SimulateDeviceStateChange(string deviceId, string state)
+    public void SimulateDeviceStateChange(string id, string state)
     {
-        SimulateMessage("/devices/state/changed", new { deviceId, state });
+
+        SimulateMessage("/devices/state/changed", new 
+        { 
+            id, 
+            state, 
+            deviceType = "MOUSE", 
+            extendedDisplayName= "G305 Lightspeed Wireless Gaming Mouse", 
+            capabilities= new
+            {
+                hasBatteryStatus = "true"
+            }
+        }
+        );
     }
 
     /// <summary>
