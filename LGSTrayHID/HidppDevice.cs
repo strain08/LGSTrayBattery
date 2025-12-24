@@ -25,6 +25,7 @@ public class HidppDevice : IDisposable
     private byte _batteryFeatureIndex = 0xFF; // 0xFF = not set
     private readonly BatteryEventThrottler _eventThrottler = new(500); // 500ms throttle window
     private readonly BatteryUpdatePublisher _batteryPublisher = new(); // Handles deduplication and IPC
+    private bool _forceNextUpdate = false; // Force next battery update to bypass deduplication
 
     // Semaphore to prevent concurrent InitAsync calls
     private readonly SemaphoreSlim _initSemaphore = new(1, 1);
@@ -220,6 +221,10 @@ public class HidppDevice : IDisposable
 
         DiagnosticLogger.Log($"HID device registered - {Identifier} ({DeviceName})");
 
+        // Force next battery update to bypass deduplication
+        // This ensures fresh timestamp even if battery % unchanged after reconnect
+        _forceNextUpdate = true;
+
         await Task.Delay(1000);
         if (_batteryFeature == null) return;
 
@@ -283,8 +288,16 @@ public class HidppDevice : IDisposable
         var now = DateTimeOffset.Now;
         lastUpdate = now;
 
+        // Check reconnect flag and consume it
+        bool shouldForce = forceIpcUpdate || _forceNextUpdate;
+        if (_forceNextUpdate)
+        {
+            DiagnosticLogger.Log($"[{DeviceName}] Forcing battery update after reconnect");
+            _forceNextUpdate = false; // Consume flag
+        }
+
         // Publish update (handles deduplication, IPC, logging)
-        _batteryPublisher.PublishUpdate(Identifier, DeviceName, batStatus, now, "poll", forceIpcUpdate);
+        _batteryPublisher.PublishUpdate(Identifier, DeviceName, batStatus, now, "poll", shouldForce);
     }
 
     /// <summary>

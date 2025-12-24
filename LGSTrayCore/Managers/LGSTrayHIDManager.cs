@@ -181,8 +181,18 @@ public class LGSTrayHIDManager : IDeviceManager, IHostedService, IDisposable
         return Task.CompletedTask;
     }
 
-    public void RediscoverDevices()
+    public async void RediscoverDevices()
     {
+        // First, remove all Native HID devices to prevent stale state
+        _deviceEventBus.Publish(new RemoveMessage("*NATIVE*", "rediscover_cleanup"));
+        DiagnosticLogger.Log("Clearing all Native HID devices before rediscovery");
+
+        // Wait 100ms for removal to propagate through MessagePipe
+        await Task.Delay(100);
+
+        // Now restart daemon to rediscover devices fresh
         _daemonCts?.Cancel();
+
+        DiagnosticLogger.Log("Native HID device rediscovery initiated (daemon restart)");
     }
 }

@@ -228,6 +228,23 @@ public class LogiDeviceCollection : ILogiDeviceCollection
                 return;
             }
 
+            // Handle wildcard Native HID removal pattern
+            if (removeMessage.deviceId == "*NATIVE*")
+            {
+                DiagnosticLogger.Log($"Wildcard Native HID removal requested (reason: {removeMessage.reason})");
+
+                // Remove all devices with Native data source
+                var nativeDevices = Devices.Where(d => d.DataSource == DataSource.Native).ToList();
+
+                foreach (var device in nativeDevices)
+                {
+                    RemoveDevice(device, removeMessage.reason);
+                }
+
+                DiagnosticLogger.Log($"Removed {nativeDevices.Count} Native HID device(s)");
+                return;
+            }
+
             // Normal single device removal
             var deviceToRemove = Devices.FirstOrDefault(d => d.DeviceId == removeMessage.deviceId);
 
