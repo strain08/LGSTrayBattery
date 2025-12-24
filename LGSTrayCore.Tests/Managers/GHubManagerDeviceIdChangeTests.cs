@@ -26,6 +26,10 @@ public class GHubManagerDeviceIdChangeTests
         var mockFactory = new MockWebSocketClientFactory(mockWs);
         var manager = new GHubManager(mockPublisher, mockFactory);
 
+        // Register device info for auto-response
+        mockWs.RegisterDeviceInfo("dev00000001", "G Pro Wireless");
+        mockWs.RegisterDeviceInfo("dev00000002", "G Pro Wireless");
+
         await manager.StartAsync(CancellationToken.None);
 
         // Simulate initial device discovery
@@ -39,13 +43,9 @@ public class GHubManagerDeviceIdChangeTests
         mockWs.SimulateDeviceStateChange("dev00000001", "not_connected");
         await Task.Delay(50);
 
-        // Step 2: Device reconnects with new ID (wake)
-        mockWs.SimulateDeviceStateChange("dev00000002", "active");
-        await Task.Delay(50);
-
-        // GHUB sends new device list with new ID
-        mockWs.SimulateDeviceListResponse(("dev00000002", "G Pro Wireless", true));
-        await Task.Delay(50);
+        // Step 2: Device reconnects with new ID (wake) - GHUB sends full device info in state change
+        mockWs.SimulateDeviceStateChange("dev00000002", "active", includeDeviceInfo: true);
+        await Task.Delay(100); // Wait for processing
 
         // Assert
         var removeMsg = mockPublisher.PublishedMessages.OfType<RemoveMessage>()
@@ -88,10 +88,10 @@ public class GHubManagerDeviceIdChangeTests
     }
 
     [Fact]
-    public async Task DeviceConnected_RequestsDeviceInfo()
+    public async Task DeviceConnected_WithDeviceInfo_PublishesInitMessage()
     {
         // This test verifies that when GHUB sends /devices/state/changed
-        // with state="active", we request device info to trigger re-registration
+        // with state="active" and full device info, we re-register the device
 
         // Arrange
         var mockPublisher = new MockPublisher<IPCMessage>();
@@ -99,17 +99,23 @@ public class GHubManagerDeviceIdChangeTests
         var mockFactory = new MockWebSocketClientFactory(mockWs);
         var manager = new GHubManager(mockPublisher, mockFactory);
 
+        // Register device info for state change simulation
+        mockWs.RegisterDeviceInfo("dev00000002", "Test Device");
+
         await manager.StartAsync(CancellationToken.None);
         await Task.Delay(100);
-        mockWs.SentMessages.Clear(); // Clear startup messages
+        mockPublisher.PublishedMessages.Clear(); // Clear startup messages
 
-        // Act
-        mockWs.SimulateDeviceStateChange("dev00000002", "active");
+        // Act - simulate device reconnect with full device info in state change
+        mockWs.SimulateDeviceStateChange("dev00000002", "active", includeDeviceInfo: true);
+        await Task.Delay(50);
 
-        // Assert
-        var deviceRequest = mockWs.SentMessages.FirstOrDefault(m => m.Contains("/devices/dev00000002"));
-        Assert.NotNull(deviceRequest);
-        Assert.Contains("\"path\":\"/devices/dev00000002\"", deviceRequest);
+        // Assert - device should be re-registered
+        var initMsg = mockPublisher.PublishedMessages.OfType<InitMessage>()
+            .FirstOrDefault(m => m.deviceId == "dev00000002");
+
+        Assert.NotNull(initMsg);
+        Assert.Equal("Test Device", initMsg.deviceName);
     }
 
     [Fact]

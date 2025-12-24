@@ -14,6 +14,7 @@ public class MockWebSocketClient : IWebSocketClient
     private Subject<DisconnectionInfo> _disconnectionSubject;
     private Subject<ReconnectionInfo> _reconnectionSubject;
     private bool _disposed;
+    private Dictionary<string, object> _deviceRegistry = new();
 
     public MockWebSocketClient()
     {
@@ -112,6 +113,20 @@ public class MockWebSocketClient : IWebSocketClient
     // Test helper methods
 
     /// <summary>
+    /// Register device info for auto-response to GET /devices/{deviceId} requests
+    /// </summary>
+    public void RegisterDeviceInfo(string deviceId, string name, string type = "mouse", bool hasBattery = true)
+    {
+        _deviceRegistry[deviceId] = new
+        {
+            id = deviceId,
+            extendedDisplayName = name,
+            deviceType = type,
+            capabilities = new { hasBatteryStatus = hasBattery }
+        };
+    }
+
+    /// <summary>
     /// Simulate a GHUB message with the given path and payload
     /// </summary>
     public void SimulateMessage(string path, object payload)
@@ -146,21 +161,34 @@ public class MockWebSocketClient : IWebSocketClient
     /// <summary>
     /// Simulate GHUB /devices/state/changed event
     /// </summary>
-    public void SimulateDeviceStateChange(string id, string state)
+    public void SimulateDeviceStateChange(string id, string state, bool includeDeviceInfo = false)
     {
+        object payload;
 
-        SimulateMessage("/devices/state/changed", new 
-        { 
-            id, 
-            state, 
-            deviceType = "MOUSE", 
-            extendedDisplayName= "G305 Lightspeed Wireless Gaming Mouse", 
-            capabilities= new
+        if (includeDeviceInfo && state == "active" && _deviceRegistry.TryGetValue(id, out var deviceInfo))
+        {
+            // For "active" state, GHUB includes full device info in the payload
+            var deviceData = (dynamic)deviceInfo;
+            payload = new
             {
-                hasBatteryStatus = "true"
-            }
+                id,
+                state,
+                deviceType = deviceData.deviceType,
+                extendedDisplayName = deviceData.extendedDisplayName,
+                capabilities = deviceData.capabilities
+            };
         }
-        );
+        else
+        {
+            // For other states, just send minimal info
+            payload = new
+            {
+                id,
+                state
+            };
+        }
+
+        SimulateMessage("/devices/state/changed", payload);
     }
 
     /// <summary>

@@ -339,20 +339,30 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
             string state = payload["state"]?.ToString()?.ToLower() ?? "";
 
             DiagnosticLogger.Log($"GHUB device state change - {deviceId}: {state}");
-            //DiagnosticLogger.Log($"Full payload: {payload.ToString(Formatting.None)}");
+            DiagnosticLogger.Log($"Full state change payload: {payload.ToString(Formatting.None)}");
 
             switch (state)
             {
-                case "not_connected":                
+                case "not_connected":
                     // Device disconnected - publish removal
                     _deviceEventBus.Publish(new RemoveMessage(deviceId, "ghub_disconnect"));
                     DiagnosticLogger.Log($"Device removed via GHUB disconnect - {deviceId}");
                     break;
 
-                case "active":                
-                    // Device reconnected - register from payload (full Device.Info already present)
-                    DiagnosticLogger.Log($"Device reconnected - re-registering from state payload: {deviceId}");
-                    LoadDevice(payload);
+                case "active":
+                    // Device reconnected - check if payload contains device info
+                    if (payload["deviceType"] != null && payload["extendedDisplayName"] != null)
+                    {
+                        // Payload contains full device info, use it directly
+                        DiagnosticLogger.Log($"Device reconnected with full info in payload - re-registering: {deviceId}");
+                        LoadDevice(payload);
+                    }
+                    else
+                    {
+                        // Payload doesn't contain device info, request full device list
+                        DiagnosticLogger.Log($"Device reconnected without full info - requesting device list");
+                        LoadDevices();
+                    }
                     break;
 
                 default:
