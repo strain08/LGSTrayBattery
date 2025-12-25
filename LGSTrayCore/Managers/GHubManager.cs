@@ -96,9 +96,7 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
     private const int PROTOCOL_ERROR_THRESHOLD = 3;
     private DateTime _lastProtocolErrorNotification = DateTime.MinValue;
 
-    public GHubManager(
-        IPublisher<IPCMessage> deviceEventBus,
-        IWebSocketClientFactory wsFactory)
+    public GHubManager(IPublisher<IPCMessage> deviceEventBus, IWebSocketClientFactory wsFactory)
     {
         _deviceEventBus = deviceEventBus;
         _wsFactory = wsFactory;
@@ -200,7 +198,7 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
                         DiagnosticLogger.LogWarning("GHUB Received /devices/list with null payload");
                         break;
                     }
-                    LoadDevices(ghubmsg.Payload);
+                    ParseDevicesList(ghubmsg.Payload);
                     break;
                 }
             case "/battery/state/changed":
@@ -232,13 +230,19 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
         }
     }
 
-    protected void LoadDevices(JObject payload)
+    protected void ParseDevicesList(JObject payload)
     {
         try
         {
+            string payloadStr = payload.ToString(Formatting.None);
+            string emptyPayloadStr = "{\"@type\":\"type.googleapis.com/logi.protocol.devices.Device.Info.List\"}";
+            if (payload.ToString(Formatting.None) == emptyPayloadStr)
+            {
+                DiagnosticLogger.LogWarning("LoadDevices contains no useful fields - skipping.");
+                return;
+            }
             // Safe array extraction with type checking
-            var deviceInfos = payload["deviceInfos"] as JArray;
-            if (deviceInfos == null)
+            if (payload["deviceInfos"] is not JArray deviceInfos)
             {
                 DiagnosticLogger.LogWarning("GHUB response missing or invalid 'deviceInfos' array");
                 DiagnosticLogger.LogError("POSSIBLE PROTOCOL CHANGE - Please update LGSTrayBattery");
@@ -255,7 +259,7 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
                 // Validate that each device entry is a JObject
                 if (deviceToken is not JObject deviceObj)
                 {
-                    DiagnosticLogger.LogWarning("GHUB device entry is not an object - skipping");
+                    DiagnosticLogger.LogWarning("GHUB device entry is not an JObject - skipping");
                     continue;
                 }
 

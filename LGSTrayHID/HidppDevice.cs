@@ -174,7 +174,13 @@ public class HidppDevice : IDisposable
             if (fwInfo.SerialNumberSupported)
             {
                 serialNumber = await DeviceMetadataRetriever.GetSerialNumberAsync(this, featureId);
+                DiagnosticLogger.Log($"[{DeviceName}] Serial Number: {serialNumber}");
+            } else
+            {
+                DiagnosticLogger.Log($"[{DeviceName}] Serial Number not supported by device firmware");
+                DiagnosticLogger.Log($"[{DeviceName}] Unit id: {fwInfo.UnitId} Model id: {fwInfo.ModelId}");
             }
+
 
             Identifier = DeviceIdentifierGenerator.GenerateIdentifier(serialNumber, fwInfo.UnitId, fwInfo.ModelId, DeviceName);
         }
