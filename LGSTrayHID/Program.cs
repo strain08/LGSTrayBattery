@@ -17,17 +17,26 @@ internal class Program
 {
     static async Task Main(string[] args)
     {
-        // Parse logging flags BEFORE any configuration loading
-        bool enableLogging = args.Contains("--log");
-        bool enableVerbose = args.Contains("--verbose");
+        // Load Logging config
+        var builder = Host.CreateEmptyApplicationBuilder(null);
+        builder.Configuration.AddTomlFile("appsettings.toml", optional: true, reloadOnChange: false);
+        var loggingSettings = builder.Configuration.GetSection("Logging").Get<LoggingSettings>();
+
+        // Determine logging settings
+        bool enableLogging = loggingSettings?.Enabled ?? false;
+        bool enableVerbose = loggingSettings?.Verbose ?? false;
+
+        // Command-line overrides
+        if (args.Contains("--log")) enableLogging = true;
+        if (args.Contains("--verbose")) enableVerbose = true;
+
 #if DEBUG
         enableLogging = true;
-        enableVerbose = false;
+        // Note: HID daemon only enables verbose if explicitly requested
 #endif
-        DiagnosticLogger.Initialize(enableLogging, enableVerbose);
 
-        var builder = Host.CreateEmptyApplicationBuilder(null);
-        builder.Configuration.AddTomlFile("appsettings.toml");
+        // Initialize logging
+        DiagnosticLogger.Initialize(enableLogging, enableVerbose);
 
         GlobalSettings.settings = builder.Configuration.GetSection("Native")
             .Get<NativeDeviceManagerSettings>() ?? GlobalSettings.settings;

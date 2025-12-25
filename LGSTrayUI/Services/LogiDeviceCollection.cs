@@ -10,7 +10,6 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
-using System.Threading.Tasks;
 
 namespace LGSTrayUI;
 
@@ -20,7 +19,7 @@ public class LogiDeviceCollection : ILogiDeviceCollection
     private readonly LogiDeviceViewModelFactory _logiDeviceViewModelFactory;
     private readonly ISubscriber<IPCMessage> _subscriber;
     private readonly IDispatcher _dispatcher;
-    private const int STUB_CLEANUP_DELAY_MS = 30_000; // 30 seconds
+    private readonly AppSettings _appSettings;
 
     // Runtime mapping: signature → current deviceId (for GHUB devices with changing IDs)
     private readonly Dictionary<string, string> _signatureToId = new();
@@ -32,13 +31,15 @@ public class LogiDeviceCollection : ILogiDeviceCollection
         UserSettingsWrapper userSettings,
         LogiDeviceViewModelFactory logiDeviceViewModelFactory,
         ISubscriber<IPCMessage> subscriber,
-        IDispatcher dispatcher
+        IDispatcher dispatcher,
+        AppSettings appSettings
     )
     {
         _userSettings = userSettings;
         _logiDeviceViewModelFactory = logiDeviceViewModelFactory;
         _subscriber = subscriber;
         _dispatcher = dispatcher;
+        _appSettings = appSettings;
 
         _subscriber.Subscribe(x =>
         {
@@ -128,6 +129,13 @@ public class LogiDeviceCollection : ILogiDeviceCollection
                 }
 
                 DiagnosticLogger.Log($"Device already exists, updating - {initMessage.deviceId} ({initMessage.deviceName})");
+
+                // Log if device was offline and is now reconnecting
+                if (existingDevice.BatteryPercentage < 0)
+                {
+                    DiagnosticLogger.Log($"Device reconnected from offline state - {initMessage.deviceId}");
+                }
+
                 existingDevice.UpdateState(initMessage);
 
                 // Update signature mapping
@@ -172,7 +180,27 @@ public class LogiDeviceCollection : ILogiDeviceCollection
                 return;
             }
 
-            device.UpdateState(updateMessage);
+            // Check if device is going offline (batteryPercentage = -1)
+            if (updateMessage.batteryPercentage < 0)
+            {
+                if (_appSettings.UI.KeepOfflineDevices)
+                {
+                    // Keep device in collection, update with offline state
+                    DiagnosticLogger.Log($"Device offline, keeping in collection - {device.DeviceId} ({device.DeviceName})");
+                    device.UpdateState(updateMessage);
+                }
+                else
+                {
+                    // Remove device from collection
+                    DiagnosticLogger.Log($"Device offline, removing from collection - {device.DeviceId} ({device.DeviceName})");
+                    RemoveDevice(device, "device_offline");
+                }
+            }
+            else
+            {
+                // Normal battery update (not offline)
+                device.UpdateState(updateMessage);
+            }
         });
     }
 
@@ -227,7 +255,20 @@ public class LogiDeviceCollection : ILogiDeviceCollection
                 return;
             }
 
-            RemoveDevice(deviceToRemove, removeMessage.reason);
+            // Check keepOfflineDevices setting
+            if (_appSettings.UI.KeepOfflineDevices)
+            {
+                // Mark device as offline instead of removing
+                DiagnosticLogger.Log($"Marking device offline (keepOfflineDevices=true) - {deviceToRemove.DeviceId} ({deviceToRemove.DeviceName}) - reason: {removeMessage.reason}");
+                deviceToRemove.BatteryPercentage = -1;
+                deviceToRemove.PowerSupplyStatus = PowerSupplyStatus.POWER_SUPPLY_STATUS_UNKNOWN;
+                // Icon will automatically update to show "?" or "Missing" icon
+            }
+            else
+            {
+                // Original behavior: Remove device entirely
+                RemoveDevice(deviceToRemove, removeMessage.reason);
+            }
         });
     }
 
@@ -236,6 +277,15 @@ public class LogiDeviceCollection : ILogiDeviceCollection
     /// </summary>
     private void RemoveDevice(LogiDeviceViewModel device, string reason)
     {
+        // Check keepOfflineDevices setting for wildcard removals
+        if (_appSettings.UI.KeepOfflineDevices)
+        {
+            DiagnosticLogger.Log($"Marking device offline (wildcard, keepOfflineDevices=true) - {device.DeviceId}");
+            device.BatteryPercentage = -1;
+            device.PowerSupplyStatus = PowerSupplyStatus.POWER_SUPPLY_STATUS_UNKNOWN;
+            return; // Don't actually remove
+        }
+
         DiagnosticLogger.Log($"Removing device - {device.DeviceId} ({device.DeviceName}) [Signature: {device.DeviceSignature}] - reason: {reason}");
 
         // Uncheck to release icon resources

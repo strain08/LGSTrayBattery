@@ -11,11 +11,19 @@ public class AppSettings
     public NativeDeviceManagerSettings Native { get; set; } = null!;
 
     public NotificationSettings Notifications { get; set; } = null!;
+
+    public LoggingSettings Logging { get; set; } = null!;
 }
 
 public class UISettings
 {
     public bool EnableRichToolTips { get; set; }
+
+    /// <summary>
+    /// Keep offline devices visible in tray menu (marked with BatteryPercentage = -1).
+    /// When false (default), devices are removed from menu when disconnected.
+    /// </summary>
+    public bool KeepOfflineDevices { get; set; } = false;
 }
 
 public class HttpServerSettings
@@ -61,4 +69,20 @@ public class NotificationSettings
     public int BatteryLowThreshold { get; set; } = 30;
     public bool NotifyOnBatteryHigh { get; set; } = true;
     public int BatteryHighThreshold { get; set; } = 80;
+}
+
+public class LoggingSettings
+{
+    /// <summary>
+    /// Enable diagnostic logging to diagnostic.log file.
+    /// Can be overridden by --log command-line flag.
+    /// </summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// Enable verbose diagnostic logging (includes detailed trace messages).
+    /// Requires Enabled = true or --log flag.
+    /// Can be overridden by --verbose command-line flag.
+    /// </summary>
+    public bool Verbose { get; set; } = false;
 }

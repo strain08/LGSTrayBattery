@@ -72,9 +72,25 @@ public partial class App : Application
             ;
         EnableEfficiencyMode();
 
-        // Parse command-line arguments for logging control
-        bool enableLogging = e.Args.Contains("--log");
-        bool enableVerbose = e.Args.Contains("--verbose");
+        // Load configuration 
+        var builder = Host.CreateEmptyApplicationBuilder(null);
+        await LoadAppSettings(builder.Configuration);
+        IConfiguration config = builder.Configuration;
+        var appSettings = config.Get<AppSettings>()!;
+
+        // STEP 2: Determine logging settings (config + CLI overrides)
+        bool enableLogging = appSettings.Logging?.Enabled ?? false;
+        bool enableVerbose = appSettings.Logging?.Verbose ?? false;
+
+        // Parse command-line arguments for logging overrides
+        if (e.Args.Contains("--log"))
+        {
+            enableLogging = true;
+        }
+        if (e.Args.Contains("--verbose"))
+        {
+            enableVerbose = true;
+        }
 
         // Store in static properties for LGSTrayHIDManager
         LoggingEnabled = enableLogging;
@@ -85,9 +101,8 @@ public partial class App : Application
         enableVerbose = true;
 #endif
 
-        // Initialize logging before any Log() calls
+        // Initialize logging
         DiagnosticLogger.Initialize(enableLogging, enableVerbose);
-
         DiagnosticLogger.ResetLog();
         DiagnosticLogger.Log("Logging started.");
         if (enableVerbose)
@@ -95,15 +110,8 @@ public partial class App : Application
             DiagnosticLogger.Log("Verbose logging enabled.");
         }
 
-        var builder = Host.CreateEmptyApplicationBuilder(null);
-        await LoadAppSettings(builder.Configuration);
-
-
-        builder.Services.Configure<AppSettings>(builder.Configuration);
-
-        // Register AppSettings as singleton for direct injection
-        IConfiguration config = builder.Configuration;
-        var appSettings = config.Get<AppSettings>()!;
+        // DI setup
+        builder.Services.Configure<AppSettings>(config);
         builder.Services.AddSingleton(appSettings);
 
         builder.Services.AddLGSMessagePipe(true);

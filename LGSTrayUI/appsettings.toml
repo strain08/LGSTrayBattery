@@ -1,6 +1,9 @@
 [UI]
 enableRichToolTips = true
 
+# Keep devices in taskbar when they go offline 
+keepOfflineDevices = false
+
 [HTTPServer]
 enabled = true
 addr = "localhost"
@@ -36,3 +39,12 @@ notifyOnBatteryHigh = true
 
 # Battery percentage threshold for "charged" notification
 batteryHighThreshold = 80
+
+[Logging]
+# Enable diagnostic logging to diagnostic.log
+# Can be overridden by --log command-line flag
+enabled = false
+
+# Enable verbose logging (detailed trace messages)
+# Can be overridden by --verbose command-line flag
+verbose = false
