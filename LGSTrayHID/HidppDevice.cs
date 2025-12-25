@@ -220,12 +220,16 @@ public class HidppDevice : IDisposable
             DiagnosticLogger.LogWarning($"[{DeviceName}] No battery feature found.");
         }
 
+        // Generate stable signature for Native HID device
+        // Format: "NATIVE.{deviceType}.{identifier}"
+        string deviceSignature = $"NATIVE.{(DeviceType)DeviceType}.{Identifier}";
+
         HidppManagerContext.Instance.SignalDeviceEvent(
             IPCMessageType.INIT,
-            new InitMessage(Identifier, DeviceName, _batteryFeature != null, (DeviceType)DeviceType)
+            new InitMessage(Identifier, DeviceName, _batteryFeature != null, (DeviceType)DeviceType, deviceSignature)
         );
 
-        DiagnosticLogger.Log($"HID device registered - {Identifier} ({DeviceName})");
+        DiagnosticLogger.Log($"HID device registered - {Identifier} ({DeviceName}) [Signature: {deviceSignature}]");
 
         // Force next battery update to bypass deduplication
         // This ensures fresh timestamp even if battery % unchanged after reconnect

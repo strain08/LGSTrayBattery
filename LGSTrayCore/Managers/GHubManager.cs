@@ -291,12 +291,21 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
                     deviceType = DeviceType.Mouse;
                 }
 
+                // Extract deviceSignature (stable identifier from GHUB)
+                string? deviceSignature = GHubJsonHelpers.GetStringOrDefault(deviceObj, "deviceSignature", null!);
+                if (!string.IsNullOrEmpty(deviceSignature))
+                {
+                    // Prefix with "GHUB." to distinguish from Native HID
+                    deviceSignature = $"GHUB.{deviceSignature}";
+                }
+
                 // Publish device with validated data
                 _deviceEventBus.Publish(new InitMessage(
                     deviceId,
                     deviceName,
                     hasBattery,
-                    deviceType
+                    deviceType,
+                    deviceSignature
                 ));
 
                 DiagnosticLogger.Log($"GHub device registered - {deviceId} ({deviceName})");
@@ -370,12 +379,21 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
                 deviceType = DeviceType.Mouse;
             }
 
+            // Extract deviceSignature (stable identifier from GHUB)
+            string? deviceSignature = GHubJsonHelpers.GetStringOrDefault(payload, "deviceSignature", null!);
+            if (!string.IsNullOrEmpty(deviceSignature))
+            {
+                // Prefix with "GHUB." to distinguish from Native HID
+                deviceSignature = $"GHUB.{deviceSignature}";
+            }
+
             // Publish device with validated data
             _deviceEventBus.Publish(new InitMessage(
                 deviceId,
                 deviceName,
                 hasBattery,
-                deviceType
+                deviceType,
+                deviceSignature
             ));
 
             DiagnosticLogger.Log($"GHub device re-registered - {deviceId} ({deviceName})");

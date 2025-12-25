@@ -124,15 +124,15 @@ public partial class NotifyIconViewModel : ObservableObject, IHostedService
             return;
         }
 
-        LogiDevice logiDevice = (LogiDevice)menuItem.DataContext;
+        LogiDeviceViewModel logiDevice = (LogiDeviceViewModel)menuItem.DataContext;
 
         if (menuItem.IsChecked)
         {
-            _userSettings.AddDevice(logiDevice.DeviceId);
+            _userSettings.AddSignature(logiDevice.DeviceSignature);
         }
         else
         {
-            _userSettings.RemoveDevice(logiDevice.DeviceId);
+            _userSettings.RemoveSignature(logiDevice.DeviceSignature);
         }
     }
 

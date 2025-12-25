@@ -25,7 +25,7 @@ public abstract class IPCMessage(string deviceId)
 }
 
 [MessagePackObject]
-public class InitMessage(string deviceId, string deviceName, bool hasBattery, DeviceType deviceType) : IPCMessage(deviceId)
+public class InitMessage(string deviceId, string deviceName, bool hasBattery, DeviceType deviceType, string? deviceSignature = null) : IPCMessage(deviceId)
 {
     [Key(1)]
     public string deviceName = deviceName;
@@ -35,6 +35,9 @@ public class InitMessage(string deviceId, string deviceName, bool hasBattery, De
 
     [Key(3)]
     public DeviceType deviceType = deviceType;
+
+    [Key(4)]
+    public string? deviceSignature = deviceSignature;
 }
 
 [MessagePackObject]

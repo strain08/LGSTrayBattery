@@ -33,6 +33,12 @@ public partial class LogiDeviceViewModel : LogiDevice
     [ObservableProperty]
     private bool _isChecked = false;
 
+    /// <summary>
+    /// Stable device signature for persistent settings (GHUB.xxx or NATIVE.xxx)
+    /// </summary>
+    [ObservableProperty]
+    private string _deviceSignature = string.Empty;
+
     private LogiDeviceIcon? taskbarIcon;
 
     public LogiDeviceViewModel(ILogiDeviceIconFactory logiDeviceIconFactory)
@@ -51,6 +57,7 @@ public partial class LogiDeviceViewModel : LogiDevice
                     break;
                 case nameof(DeviceName):
                 case nameof(DeviceId):
+                case nameof(DeviceSignature):
                 case nameof(BatteryPercentage):
                 case nameof(BatteryVoltage):
                 case nameof(BatteryMileage):
@@ -85,6 +92,17 @@ public partial class LogiDeviceViewModel : LogiDevice
         HasBattery = initMessage.hasBattery;
         DeviceType = initMessage.deviceType;
         DataSource = DataSourceHelper.GetDataSource(initMessage.deviceId);
+
+        // Store signature for persistent settings
+        if (!string.IsNullOrEmpty(initMessage.deviceSignature))
+        {
+            DeviceSignature = initMessage.deviceSignature;
+        }
+        else
+        {
+            // Fallback: use deviceId as signature if none provided
+            DeviceSignature = initMessage.deviceId;
+        }
     }
 
     public void UpdateState(UpdateMessage updateMessage)
@@ -127,6 +145,10 @@ public partial class LogiDeviceViewModel : LogiDevice
             sb.AppendLine($"Device: {DeviceName}");
             sb.AppendLine($"Source: {DataSourceDisplayName}");
             sb.AppendLine($"ID: {DeviceId}");
+
+            // Show signature for debugging/troubleshooting
+            if (!string.IsNullOrEmpty(DeviceSignature))
+                sb.AppendLine($"Signature: {DeviceSignature}");
 
             if (LastUpdate != DateTimeOffset.MinValue)
                 sb.AppendLine($"Last Update: {LastUpdate:g}");

@@ -22,6 +22,9 @@ public class LogiDeviceCollection : ILogiDeviceCollection
     private readonly IDispatcher _dispatcher;
     private const int STUB_CLEANUP_DELAY_MS = 30_000; // 30 seconds
 
+    // Runtime mapping: signature → current deviceId (for GHUB devices with changing IDs)
+    private readonly Dictionary<string, string> _signatureToId = new();
+
     public ObservableCollection<LogiDeviceViewModel> Devices { get; } = [];
     public IEnumerable<LogiDevice> GetDevices() => Devices;
 
@@ -58,36 +61,23 @@ public class LogiDeviceCollection : ILogiDeviceCollection
 
     private void LoadPreviouslySelectedDevices()
     {
+        // MIGRATION: Clear old deviceId-based settings (manual re-selection approach)
+        if (_userSettings.SelectedDevices.Count > 0)
+        {
+            DiagnosticLogger.Log($"MIGRATION: Clearing {_userSettings.SelectedDevices.Count} old device ID settings");
+            DiagnosticLogger.Log("Users will need to re-select their devices (signature-based matching)");
+            _userSettings.SelectedDevices.Clear();
+            Properties.Settings.Default.Save();
+        }
+
         // Deduplicate settings first
         DeduplicateSettings();
 
-        foreach (var deviceId in _userSettings.SelectedDevices)
-        {
-            if (string.IsNullOrEmpty(deviceId))
-            {
-                continue;
-            }
+        // Note: We no longer load stubs for previously selected devices.
+        // Signature-based matching will restore selection when devices reconnect.
+        // This eliminates the need for stub cleanup logic.
 
-            Devices.Add(
-                _logiDeviceViewModelFactory.CreateViewModel((x) =>
-                {
-                    x.DeviceId = deviceId!;
-                    x.DeviceName = "Not Initialised";
-                    x.DataSource = DataSourceHelper.GetDataSource(deviceId!);
-                    x.IsChecked = true;
-                })
-            );
-        }
-
-        // Schedule cleanup of stale stubs after grace period
-        if (Devices.Any())
-        {
-            _ = Task.Run(async () =>
-            {
-                await Task.Delay(STUB_CLEANUP_DELAY_MS);
-                CleanupStaleStubs();
-            });
-        }
+        DiagnosticLogger.Log($"Loaded {_userSettings.SelectedSignatures.Count} device signature(s) from settings");
     }
 
     public bool TryGetDevice(string deviceId, [NotNullWhen(true)] out LogiDevice? device)
@@ -103,88 +93,71 @@ public class LogiDeviceCollection : ILogiDeviceCollection
         // InvalidOperationException during enumeration
         _dispatcher.BeginInvoke(() =>
         {
-            LogiDeviceViewModel? dev = Devices.SingleOrDefault(x => x.DeviceId == initMessage.deviceId);
+            // Get signature from message (should always be present now)
+            string? signature = initMessage.deviceSignature;
 
-            // Device already exists - just update it
-            if (dev != null)
+            if (string.IsNullOrEmpty(signature))
             {
+                DiagnosticLogger.LogWarning($"Device {initMessage.deviceId} has no signature - using deviceId as fallback");
+                signature = initMessage.deviceId;
+            }
+
+            // Check if device already exists by signature (not deviceId, as GHUB changes IDs)
+            LogiDeviceViewModel? existingDevice = null;
+
+            // First, try to find by signature in our mapping
+            if (_signatureToId.TryGetValue(signature, out string? mappedDeviceId))
+            {
+                existingDevice = Devices.FirstOrDefault(x => x.DeviceId == mappedDeviceId);
+            }
+
+            // Fallback: search by current deviceId
+            if (existingDevice == null)
+            {
+                existingDevice = Devices.FirstOrDefault(x => x.DeviceId == initMessage.deviceId);
+            }
+
+            // Device already exists - update it
+            if (existingDevice != null)
+            {
+                // Check if deviceId changed (GHUB ID change scenario)
+                if (existingDevice.DeviceId != initMessage.deviceId)
+                {
+                    DiagnosticLogger.Log($"Device ID changed: {existingDevice.DeviceId} → {initMessage.deviceId} (Signature: {signature})");
+                    existingDevice.DeviceId = initMessage.deviceId;
+                }
+
                 DiagnosticLogger.Log($"Device already exists, updating - {initMessage.deviceId} ({initMessage.deviceName})");
-                dev.UpdateState(initMessage);
+                existingDevice.UpdateState(initMessage);
 
-                // Restore IsChecked from settings if device was previously selected
-                // (handles cases where device wasn't removed from collection but lost checked state)
-                if (!dev.IsChecked && _userSettings.SelectedDevices.Contains(initMessage.deviceId))
+                // Update signature mapping
+                _signatureToId[signature] = initMessage.deviceId;
+
+                // Restore IsChecked from signature-based settings
+                if (!existingDevice.IsChecked && _userSettings.ContainsSignature(signature))
                 {
-                    dev.IsChecked = true;
-                    DiagnosticLogger.Log($"Restored selection state for existing device - {initMessage.deviceId}");
+                    existingDevice.IsChecked = true;
+                    DiagnosticLogger.Log($"Restored selection state for existing device - {signature}");
                 }
 
                 return;
             }
 
-            // Check for duplicate device name in same data source (different ID)
-            var dataSource = DataSourceHelper.GetDataSource(initMessage.deviceId);
-            var duplicateByName = Devices.FirstOrDefault(x =>
-                x.DeviceName == initMessage.deviceName &&
-                x.DataSource == dataSource &&
-                x.DeviceId != initMessage.deviceId);
+            // NEW DEVICE - Create and add it
+            var newDevice = _logiDeviceViewModelFactory.CreateViewModel((x) => x.UpdateState(initMessage));
 
-            if (duplicateByName != null)
+            // Update signature → deviceId mapping
+            _signatureToId[signature] = initMessage.deviceId;
+
+            // Restore selection based on signature
+            if (_userSettings.ContainsSignature(signature))
             {
-                DiagnosticLogger.LogWarning($"Duplicate device detected - same name '{initMessage.deviceName}' but different IDs: existing '{duplicateByName.DeviceId}' vs new '{initMessage.deviceId}'. Ignoring new registration.");
-                return;
+                newDevice.IsChecked = true;
+                DiagnosticLogger.Log($"Restored selection for new device - {signature}");
             }
 
-            // Check if this is a GHUB device reconnecting with new ID
-            // Look for uninitialized stub to replace
-            if (IsLikelyGHubIdChange(initMessage.deviceId))
-            {
-                var stub = Devices.FirstOrDefault(d => IsUninitializedStub(d));
-
-                if (stub != null)
-                {
-                    DiagnosticLogger.Log($"Replacing stub {stub.DeviceId} with {initMessage.deviceId} ({initMessage.deviceName})");
-
-                    // Transfer selection state
-                    bool wasSelected = stub.IsChecked;
-
-                    // Uncheck stub to dispose icon before removing from collection
-                    if (stub.IsChecked)
-                    {
-                        stub.IsChecked = false;
-                    }
-
-                    // Remove old stub
-                    _userSettings.RemoveDevice(stub.DeviceId);
-                    Devices.Remove(stub);
-
-                    // Add new device with transferred selection
-                    var newDevice = _logiDeviceViewModelFactory.CreateViewModel((x) =>
-                    {
-                        x.UpdateState(initMessage);
-                        x.IsChecked = wasSelected;
-                    });
-
-                    Devices.Add(newDevice);
-                    _userSettings.AddDevice(initMessage.deviceId);
-
-                    DiagnosticLogger.Log($"Stub replacement complete - {initMessage.deviceId}");
-                    return;
-                }
-            }
-
-            // Normal new device addition
-            dev = _logiDeviceViewModelFactory.CreateViewModel((x) => x.UpdateState(initMessage));
-
-            // Restore IsChecked state from settings if device was previously selected
-            if (_userSettings.SelectedDevices.Contains(initMessage.deviceId))
-            {
-                dev.IsChecked = true;
-                DiagnosticLogger.Log($"Restored selection state for device - {initMessage.deviceId}");
-            }
-
-            Devices.Add(dev);
-            DiagnosticLogger.Log($"Device added to collection - {initMessage.deviceId} ({initMessage.deviceName})");
+            Devices.Add(newDevice);
+            DiagnosticLogger.Log($"Device added to collection - {initMessage.deviceId} ({initMessage.deviceName}) [Signature: {signature}]");
         });
     }
 
@@ -263,7 +236,7 @@ public class LogiDeviceCollection : ILogiDeviceCollection
     /// </summary>
     private void RemoveDevice(LogiDeviceViewModel device, string reason)
     {
-        DiagnosticLogger.Log($"Removing device - {device.DeviceId} ({device.DeviceName}) - reason: {reason}");
+        DiagnosticLogger.Log($"Removing device - {device.DeviceId} ({device.DeviceName}) [Signature: {device.DeviceSignature}] - reason: {reason}");
 
         // Uncheck to release icon resources
         if (device.IsChecked)
@@ -271,91 +244,42 @@ public class LogiDeviceCollection : ILogiDeviceCollection
             device.IsChecked = false;
         }
 
-        // Only remove from settings if this is NOT a temporary disconnect
-        // Preserve settings for disconnect events so device reappears when reconnected
-        bool isTemporaryDisconnect = reason == "ghub_disconnect" || reason == "rediscover_cleanup";
-        if (!isTemporaryDisconnect)
-        {
-            _userSettings.RemoveDevice(device.DeviceId);
-            DiagnosticLogger.Log($"Device removed from settings - {device.DeviceId}");
-        }
-        else
-        {
-            DiagnosticLogger.Log($"Device settings preserved for reconnection - {device.DeviceId}");
-        }
+        // Note: With signature-based matching, we preserve settings for ALL disconnect reasons
+        // Settings are only removed when user manually unchecks the device
+        // This allows devices to seamlessly reconnect with new IDs (GHUB) or after being offline
+
+        DiagnosticLogger.Log($"Device settings preserved for reconnection - {device.DeviceSignature}");
 
         // Remove from collection (triggers UI update via ObservableCollection)
         Devices.Remove(device);
-    }
 
-    /// <summary>
-    /// Check if a device is a "Not Initialised" stub from settings
-    /// </summary>
-    private bool IsUninitializedStub(LogiDeviceViewModel device)
-    {
-        return device.DeviceName == "Not Initialised";
-    }
-
-    /// <summary>
-    /// Check if ID change is likely from GHUB sleep/wake
-    /// GHUB devices have "dev" prefix and numeric IDs
-    /// </summary>
-    private bool IsLikelyGHubIdChange(string deviceId)
-    {
-        return DataSourceHelper.GetDataSource(deviceId) == DataSource.GHub && deviceId.Length > 3;
-    }
-
-    /// <summary>
-    /// Remove duplicate and empty device IDs from settings
-    /// </summary>
-    private void DeduplicateSettings()
-    {
-        var deviceIds = _userSettings.SelectedDevices.Cast<string>()
-            .Where(id => !string.IsNullOrWhiteSpace(id))
-            .Distinct()
-            .ToList();
-
-        if (deviceIds.Count != _userSettings.SelectedDevices.Count)
+        // Remove from signature mapping
+        if (_signatureToId.ContainsKey(device.DeviceSignature))
         {
-            DiagnosticLogger.Log($"Deduplicating settings: {_userSettings.SelectedDevices.Count} → {deviceIds.Count}");
-
-            _userSettings.SelectedDevices.Clear();
-            foreach (var id in deviceIds)
-            {
-                _userSettings.SelectedDevices.Add(id);
-            }
-            Properties.Settings.Default.Save();
+            _signatureToId.Remove(device.DeviceSignature);
         }
     }
 
     /// <summary>
-    /// Remove devices still showing "Not Initialised" after timeout
-    /// These are likely from old IDs that will never initialize
+    /// Remove duplicate and empty device signatures from settings
     /// </summary>
-    private void CleanupStaleStubs()
+    private void DeduplicateSettings()
     {
-        _dispatcher.BeginInvoke(() =>
+        var signatures = _userSettings.SelectedSignatures.Cast<string>()
+            .Where(sig => !string.IsNullOrWhiteSpace(sig))
+            .Distinct()
+            .ToList();
+
+        if (signatures.Count != _userSettings.SelectedSignatures.Count)
         {
-            var staleStubs = Devices.Where(d => IsUninitializedStub(d)).ToList();
+            DiagnosticLogger.Log($"Deduplicating signature settings: {_userSettings.SelectedSignatures.Count} → {signatures.Count}");
 
-            if (staleStubs.Any())
+            _userSettings.SelectedSignatures.Clear();
+            foreach (var sig in signatures)
             {
-                DiagnosticLogger.Log($"Cleaning up {staleStubs.Count} stale stub(s)");
-
-                foreach (var stub in staleStubs)
-                {
-                    DiagnosticLogger.Log($"Removing stale stub - {stub.DeviceId}");
-
-                    // Uncheck stub to dispose icon before removing from collection
-                    if (stub.IsChecked)
-                    {
-                        stub.IsChecked = false;
-                    }
-
-                    _userSettings.RemoveDevice(stub.DeviceId);
-                    Devices.Remove(stub);
-                }
+                _userSettings.SelectedSignatures.Add(sig);
             }
-        });
+            Properties.Settings.Default.Save();
+        }
     }
 }
