@@ -7,7 +7,13 @@ using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using System.Drawing.Text;
 using System.Runtime.InteropServices;
+using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Controls;
+using System.IO;
 
 namespace LGSTrayUI;
 /// <summary>
@@ -31,7 +37,8 @@ public static partial class BatteryIconDrawing
     private static Bitmap Missing => CheckTheme.LightTheme ? Resources.Missing : Resources.Missing_dark;
     private static Bitmap Charging => CheckTheme.LightTheme ? Resources.Charging : Resources.Charging_dark;
 
-    private static int ImageSize;
+   // private static int ImageSize;
+    private static float Scale;
 
     static BatteryIconDrawing()
     {
@@ -47,9 +54,9 @@ public static partial class BatteryIconDrawing
             }
         }
         catch { dpi = 96; }
-        var scale = dpi / 96f;
+        Scale = dpi / 96f;
 
-        ImageSize = (int)(32 * scale);
+        
     }
 
     private static Bitmap GetDeviceIcon(LogiDevice device) => device.DeviceType switch
@@ -59,9 +66,9 @@ public static partial class BatteryIconDrawing
         _ => Mouse,
     };
 
-    private static Color GetDeviceColor(LogiDevice device) => device.DeviceType switch
+    private static System.Drawing.Color GetDeviceColor(LogiDevice device) => device.DeviceType switch
     {
-        _ => CheckTheme.LightTheme ? Color.FromArgb(0x11, 0x11, 0x11) : Color.FromArgb(0xEE, 0xEE, 0xEE)
+        _ => CheckTheme.LightTheme ? System.Drawing.Color.FromArgb(0x11, 0x11, 0x11) : System.Drawing.Color.White
 
     //return device.DeviceType switch
     //{
@@ -90,6 +97,7 @@ public static partial class BatteryIconDrawing
 
     public static void DrawIcon(TaskbarIcon taskbarIcon, LogiDevice device)
     {
+        var ImageSize = (int)(64 * Scale);
         var destRect = new Rectangle(0, 0, ImageSize, ImageSize);
         using var b = new Bitmap(ImageSize, ImageSize);
         using var g = Graphics.FromImage(b);
@@ -162,38 +170,79 @@ public static partial class BatteryIconDrawing
 
     public static void DrawNumeric(TaskbarIcon taskbarIcon, LogiDevice device)
     {
-        using Bitmap b = new(ImageSize, ImageSize);
-        using Graphics g = Graphics.FromImage(b);
+        var ImageSize = (int)(96 * Scale);
+        
+        // Create WPF visual for high-quality text rendering
+        DrawingVisual drawingVisual = new();
+        // Better text rendering:       
 
-        // Fill with green background if charging
-        if (device.PowerSupplyStatus == PowerSupplyStatus.POWER_SUPPLY_STATUS_CHARGING)
+        using (DrawingContext drawingContext = drawingVisual.RenderOpen())
         {
-            using SolidBrush greenBrush = CheckTheme.LightTheme ? new(Color.LimeGreen) : new(Color.DarkGreen);            
-            g.FillRectangle(greenBrush, 0, 0, ImageSize, ImageSize);           
+            // Fill with green background if charging
+            if (device.PowerSupplyStatus == PowerSupplyStatus.POWER_SUPPLY_STATUS_CHARGING)
+            {
+                System.Windows.Media.Color bgColor = CheckTheme.LightTheme
+                    ? System.Windows.Media.Color.FromRgb(50, 205, 50)  // LimeGreen
+                    : System.Windows.Media.Color.FromRgb(0, 100, 0);    // DarkGreen
+                drawingContext.DrawRectangle(
+                    new SolidColorBrush(bgColor),
+                    null,
+                    new Rect(0, 0, ImageSize, ImageSize));
+            }
+
+            // Prepare text
+            string displayString = (device.BatteryPercentage < 0) ? "?" : $"{device.BatteryPercentage:f0}";
+            //displayString = "100";
+
+            // Get device color
+            var deviceColor = GetDeviceColor(device);
+            var wpfColor = System.Windows.Media.Color.FromRgb(deviceColor.R, deviceColor.G, deviceColor.B);
+
+            // Create formatted text with WPF's superior text rendering
+            FormattedText formattedText = new (
+                displayString,
+                System.Globalization.CultureInfo.CurrentCulture,
+                FlowDirection.LeftToRight,
+                new Typeface(
+                    new System.Windows.Media.FontFamily("Segoe UI Variable Display"),
+                    FontStyles.Normal,
+                    FontWeights.SemiBold,
+                    FontStretches.Normal, 
+                    fallbackFontFamily: new System.Windows.Media.FontFamily("Segoe UI")),
+                .7 * ImageSize,
+                new SolidColorBrush(wpfColor),
+                VisualTreeHelper.GetDpi(drawingVisual).PixelsPerDip);
+
+            RenderOptions.SetClearTypeHint(drawingVisual, ClearTypeHint.Auto);
+            TextOptions.SetTextFormattingMode(drawingVisual, TextFormattingMode.Display);
+            // Center the text
+            double x = (ImageSize - formattedText.Width) / 2.0;
+            double y = (ImageSize - formattedText.Height) / 2.0;
+            
+            drawingContext.DrawText(formattedText, new System.Windows.Point(x, y));
         }
 
-        string displayString = (device.BatteryPercentage < 0) ? "?" : $"{device.BatteryPercentage:f0}";
-        g.DrawString(
-            displayString,
-            new Font("Segoe UI", (int)(0.8 * ImageSize), GraphicsUnit.Pixel),
-            new SolidBrush(GetDeviceColor(device)),
-            ImageSize / 2, ImageSize / 2,
-            new(StringFormatFlags.FitBlackBox, 0)
-            {
-                LineAlignment = StringAlignment.Center,
-                Alignment = StringAlignment.Center,
-            }
-        );
-        g.CompositingMode = CompositingMode.SourceOver;
-        g.CompositingQuality = CompositingQuality.HighQuality;
-        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-        g.SmoothingMode = SmoothingMode.HighQuality;
-        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        // Render to bitmap using WPF pipeline
+        RenderTargetBitmap renderBitmap = new (ImageSize, ImageSize, 96, 96, PixelFormats.Pbgra32);
+        renderBitmap.Render(drawingVisual);
+
+        // Convert WPF bitmap to GDI+ bitmap
+        using Bitmap b = ConvertToBitmap(renderBitmap);
 
         IntPtr iconHandle = b.GetHicon();
         Icon tempManagedRes = Icon.FromHandle(iconHandle);
         taskbarIcon.Icon = (Icon)tempManagedRes.Clone();
         tempManagedRes.Dispose();
         DestroyIcon(iconHandle);
+    }
+
+    private static Bitmap ConvertToBitmap(BitmapSource bitmapSource)
+    {
+        using MemoryStream memoryStream = new MemoryStream();
+        BitmapEncoder encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmapSource));
+        encoder.Save(memoryStream);
+        memoryStream.Position = 0;
+        return new Bitmap(memoryStream);
     }
 }
