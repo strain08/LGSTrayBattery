@@ -1,7 +1,6 @@
 # LGSTrayUI application settings
 
 [UI]
-
 # Enable tooltips for additional info, also for devices menu items
 enableRichToolTips = true
 
@@ -9,7 +8,6 @@ enableRichToolTips = true
 keepOfflineDevices = false
 
 [HTTPServer]
-
 # Enable built-in HTTP server for status and control
 enabled = true
 
@@ -18,22 +16,22 @@ port = 12321
 useIpv6 = true
 
 [GHub]
-
 # Requires Logitech G-HUB to be installed and running
 # Could provide mileage on devices that support it
 enabled = false
 
 [Native]
-
 # Enable HID++ 1.0 and 2.0 protocols, most compatible
 # Also works with most G series devices
 enabled = true
 
 # Time in seconds to retry a device poll on failure
+# ::Deprecated, will be removed in future versions
 retryTime = 10
 
 # Time in seconds to next device poll on sucess
 # Pooling will automatically disabled when device is event-capable
+# Value is clamped between 20 and 3600 seconds
 pollPeriod = 600
 
 # List of disabled devices
@@ -41,7 +39,6 @@ disabledDevices = [
 ]
 
 [Notifications]
-
 # Enable toast style notifications
 enabled = true
 

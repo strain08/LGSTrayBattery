@@ -255,9 +255,10 @@ public class HidppDevice : IDisposable
         {
             var now = DateTimeOffset.Now;
 #if DEBUG
-            var expectedUpdateTime = lastUpdate.AddSeconds(1);
+            var expectedUpdateTime = lastUpdate.AddSeconds(15);
 #else
-                        var expectedUpdateTime = lastUpdate.AddSeconds(GlobalSettings.settings.PollPeriod);
+            // clamp poll period between 20 seconds and 1 hour
+            var expectedUpdateTime = lastUpdate.AddSeconds(Math.Clamp(GlobalSettings.settings.PollPeriod, 20, 3600));
 #endif
             if (now < expectedUpdateTime)
             {
@@ -271,8 +272,9 @@ public class HidppDevice : IDisposable
             {
                 break;
             }
-
-            await Task.Delay(4000);
+            // Hardcoded 10 second minimum delay between polls to prevent tight loop in case of immediate failures
+            // TODO: implement retry on failure
+           // await Task.Delay(10_000);
             DiagnosticLogger.Log($"Polling battery for device {DeviceName}");
         }
         DiagnosticLogger.Log($"Pooling stopped for {DeviceName}.");
