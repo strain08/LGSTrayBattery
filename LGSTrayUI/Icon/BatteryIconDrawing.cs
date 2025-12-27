@@ -7,11 +7,12 @@ using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using System.Drawing.Text;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using System.IO;
 
 namespace LGSTrayUI;
 /// <summary>
@@ -192,82 +193,105 @@ public static partial class BatteryIconDrawing
 
     public static void DrawNumeric(TaskbarIcon taskbarIcon, LogiDevice device)
     {
-        var ImageSize = (int)(64 * Scale);
-        
-        // Create WPF visual for high-quality text rendering
-        DrawingVisual drawingVisual = new();
-        // Better text rendering:       
-        TextOptions.SetTextRenderingMode(drawingVisual, TextRenderingMode.ClearType);
-        TextOptions.SetTextFormattingMode(drawingVisual, TextFormattingMode.Display);
-        TextOptions.SetTextHintingMode(drawingVisual, TextHintingMode.Fixed);
-
-        using (DrawingContext drawingContext = drawingVisual.RenderOpen())
+        // 1. Get the exact system DPI scaling
+        // We use a dummy Graphics object to fetch the true system DPI
+        float dpiScale = 1.0f;
+        using (Graphics g = Graphics.FromHwnd(IntPtr.Zero))
         {
-            // Fill with green background if charging
-            if (device.PowerSupplyStatus == PowerSupplyStatus.POWER_SUPPLY_STATUS_CHARGING)
-            {
-                System.Windows.Media.Color bgColor = CheckTheme.LightTheme
-                    ? System.Windows.Media.Color.FromRgb(50, 205, 50)  // LimeGreen
-                    : System.Windows.Media.Color.FromRgb(0, 100, 0);    // DarkGreen
-                drawingContext.DrawRectangle(
-                    new SolidColorBrush(bgColor),
-                    null,
-                    new Rect(0, 0, ImageSize, ImageSize));
-            }
-
-            // Prepare text
-            string displayString = (device.BatteryPercentage < 0) ? "?" : $"{device.BatteryPercentage:f0}";
-            //displayString = "100";
-
-            // Get device color
-            var deviceColor = GetDeviceColor(device);
-            var wpfColor = System.Windows.Media.Color.FromRgb(deviceColor.R, deviceColor.G, deviceColor.B);
-            
-            // Create formatted text with WPF's superior text rendering
-            FormattedText formattedText = new (
-                displayString,
-                System.Globalization.CultureInfo.CurrentCulture,
-                FlowDirection.LeftToRight,
-                new Typeface(
-                    new System.Windows.Media.FontFamily(WindowsVersionHelper.IsWindows11OrGreater ? "Segoe UI Variable Display": "Segoe UI "),
-                    FontStyles.Normal,
-                    FontWeights.SemiBold,
-                    FontStretches.Normal, 
-                    fallbackFontFamily: new System.Windows.Media.FontFamily("Segoe UI")),
-                .71 * ImageSize,
-                new SolidColorBrush(wpfColor),
-                VisualTreeHelper.GetDpi(drawingVisual).PixelsPerDip);
-
-          //  RenderOptions.SetClearTypeHint(drawingVisual, ClearTypeHint.Auto);
-       //     TextOptions.SetTextFormattingMode(drawingVisual, TextFormattingMode.Display);
-            // Center the text
-            double x = (ImageSize - formattedText.Width) / 2.0;
-            double y = (ImageSize - formattedText.Height) / 2.0;
-            
-            drawingContext.DrawText(formattedText, new System.Windows.Point(x, y));
+            dpiScale = g.DpiX / 96.0f;
         }
 
-        // Render to bitmap using WPF pipeline
-        RenderTargetBitmap renderBitmap = new (ImageSize, ImageSize, 96, 96, PixelFormats.Pbgra32);
-        renderBitmap.Render(drawingVisual);
+        // 16x16 is standard, but we scale it up by DPI (e.g., 24x24 at 150%)
+        int width = (int)(16 * dpiScale);
+        int height = (int)(16 * dpiScale);
 
-        // Convert WPF bitmap to GDI+ bitmap
-        using Bitmap b = ConvertToBitmap(renderBitmap);
+        using Bitmap bitmap = new(width, height);
+        using (Graphics g = Graphics.FromImage(bitmap))
+        {
+            // High quality compositing avoids dark halos on transparent backgrounds
+            g.CompositingQuality = CompositingQuality.HighQuality;
 
-        IntPtr iconHandle = b.GetHicon();
-        Icon tempManagedRes = Icon.FromHandle(iconHandle);
-        taskbarIcon.Icon = (Icon)tempManagedRes.Clone();
-        tempManagedRes.Dispose();
+            // "AntiAliasGridFit" is the magic setting. 
+            // It aligns text to the pixel grid (sharpness) but smooths edges.
+            // Note: Do NOT use ClearType on transparent backgrounds; it creates ugly black fringes.
+            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+
+            // 4. Background Logic
+            bool isCharging = device.PowerSupplyStatus == PowerSupplyStatus.POWER_SUPPLY_STATUS_CHARGING;
+            
+            //if (isCharging)
+            //{
+            //    // If charging, use Green background
+            //    // We use ClearType here because we have a solid background!
+            //    g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+
+            //    System.Drawing.Color bgColor = CheckTheme.LightTheme
+            //    ? System.Drawing.Color.LimeGreen
+            //    : System.Drawing.Color.DarkGreen;
+
+            //    using System.Drawing.Brush bgBrush = new SolidBrush(bgColor);
+            //    g.FillRectangle(bgBrush, 0, 0, width, height);
+            //}
+
+
+            //bool device100Percent = device.BatteryPercentage == 100;
+
+            // Font style
+            System.Drawing.FontStyle fontStyle = isCharging ? System.Drawing.FontStyle.Underline : System.Drawing.FontStyle.Regular;
+            System.Drawing.Color textColor;
+
+            if (CheckTheme.LightTheme)
+            {
+                textColor = isCharging ? System.Drawing.Color.DarkGreen : System.Drawing.Color.Black;
+            }
+            else
+            {
+                textColor = isCharging ? System.Drawing.Color.LightGreen : System.Drawing.Color.White;
+            }
+
+            // Font size 
+            // float emSize = height * (device.BatteryPercentage == 100 ? 0.7f : 0.8f);
+            float emSize = height * 0.7f;
+            using Font font = new("Segoe UI Variable", emSize, fontStyle, GraphicsUnit.Pixel);
+            string text = (device.BatteryPercentage < 0) ? "?" : $"{device.BatteryPercentage:f0}";
+            //text = "100";           
+
+            // Text Centering
+            SizeF textSize = g.MeasureString(text, font);
+            float x = (width - textSize.Width) / 2;
+            float y = (height - textSize.Height) / 2;
+
+            // Fine-tune adjustment
+            y += 1 * dpiScale;            
+
+            using System.Drawing.Brush textBrush = new SolidBrush(textColor);
+            g.DrawString(text, font, textBrush, x, y);
+        }
+
+        // Icon
+        IntPtr iconHandle = bitmap.GetHicon();
+        var oldIcon = taskbarIcon.Icon;
+
+        using (Icon tempIcon = Icon.FromHandle(iconHandle))
+        {
+            taskbarIcon.Icon = (Icon)tempIcon.Clone();
+        }
+
+        // Cleanup
         DestroyIcon(iconHandle);
+        oldIcon?.Dispose();
     }
 
-    private static Bitmap ConvertToBitmap(BitmapSource bitmapSource)
-    {
-        using MemoryStream memoryStream = new MemoryStream();
-        BitmapEncoder encoder = new PngBitmapEncoder();
-        encoder.Frames.Add(BitmapFrame.Create(bitmapSource));
-        encoder.Save(memoryStream);
-        memoryStream.Position = 0;
-        return new Bitmap(memoryStream);
-    }
+//private static Bitmap ConvertToBitmap(BitmapSource bitmapSource)
+//    {
+//        using MemoryStream memoryStream = new MemoryStream();
+//        BitmapEncoder encoder = new PngBitmapEncoder();
+//        encoder.Frames.Add(BitmapFrame.Create(bitmapSource));
+//        encoder.Save(memoryStream);
+//        memoryStream.Position = 0;
+//        return new Bitmap(memoryStream);
+//    }
 }
