@@ -45,12 +45,16 @@ public class LogiDeviceCollectionTests
             Notifications = new NotificationSettings()
         };
 
+        // Create mock messenger
+        var messenger = new MockMessenger();
+
         var collection = new LogiDeviceCollection(
             settings,
             viewModelFactory,
             subscriber,
             dispatcher,
-            appSettings);
+            appSettings,
+            messenger);
 
         return collection;
     }
@@ -169,7 +173,8 @@ public class LogiDeviceCollectionTests
         };
 
         // Act - creating collection triggers deduplication
-        var collection = new LogiDeviceCollection(settings, viewModelFactory, subscriber, dispatcher, appSettings);
+        var messenger = new MockMessenger();
+        var collection = new LogiDeviceCollection(settings, viewModelFactory, subscriber, dispatcher, appSettings, messenger);
 
         // Assert - Verify signatures deduplicated (unique signatures only)
         Assert.Equal(2, settings.SelectedSignatures.Count);

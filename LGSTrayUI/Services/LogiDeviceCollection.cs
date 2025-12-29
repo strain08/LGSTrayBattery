@@ -1,8 +1,10 @@
-﻿using LGSTrayCore;
+﻿using CommunityToolkit.Mvvm.Messaging;
+using LGSTrayCore;
 using LGSTrayCore.Interfaces;
 using LGSTrayPrimitives;
 using LGSTrayPrimitives.Interfaces;
 using LGSTrayPrimitives.MessageStructs;
+using LGSTrayUI.Messages;
 using LGSTrayUI.Services;
 using MessagePipe;
 using System;
@@ -13,16 +15,23 @@ using System.Linq;
 
 namespace LGSTrayUI;
 
-public class LogiDeviceCollection : ILogiDeviceCollection
+public class LogiDeviceCollection : ILogiDeviceCollection,
+    IRecipient<SystemResumingMessage>
 {
     private readonly UserSettingsWrapper _userSettings;
     private readonly LogiDeviceViewModelFactory _logiDeviceViewModelFactory;
     private readonly ISubscriber<IPCMessage> _subscriber;
     private readonly IDispatcher _dispatcher;
     private readonly AppSettings _appSettings;
+    private readonly IMessenger _messenger;
 
     // Runtime mapping: signature → current deviceId (for GHUB devices with changing IDs)
     private readonly Dictionary<string, string> _signatureToId = new();
+
+    // Grace period tracking to ignore battery updates after system resume
+    private DateTimeOffset _lastResumeTime = DateTimeOffset.MinValue;
+    private static readonly TimeSpan ResumeGracePeriod = TimeSpan.FromSeconds(10);
+    private readonly object _resumeLock = new();
 
     public ObservableCollection<LogiDeviceViewModel> Devices { get; } = [];
     public IEnumerable<LogiDevice> GetDevices() => Devices;
@@ -32,7 +41,8 @@ public class LogiDeviceCollection : ILogiDeviceCollection
         LogiDeviceViewModelFactory logiDeviceViewModelFactory,
         ISubscriber<IPCMessage> subscriber,
         IDispatcher dispatcher,
-        AppSettings appSettings
+        AppSettings appSettings,
+        IMessenger messenger
     )
     {
         _userSettings = userSettings;
@@ -40,6 +50,7 @@ public class LogiDeviceCollection : ILogiDeviceCollection
         _subscriber = subscriber;
         _dispatcher = dispatcher;
         _appSettings = appSettings;
+        _messenger = messenger;
 
         _subscriber.Subscribe(x =>
         {
@@ -56,6 +67,9 @@ public class LogiDeviceCollection : ILogiDeviceCollection
                 OnRemoveMessage(removeMessage);
             }
         });
+
+        // Register for system resume messages to enable grace period
+        _messenger.Register<SystemResumingMessage>(this);
 
         LoadPreviouslySelectedDevices();
     }
@@ -86,6 +100,36 @@ public class LogiDeviceCollection : ILogiDeviceCollection
         device = Devices.SingleOrDefault(x => x.DeviceId == deviceId);
 
         return device != null;
+    }
+
+    /// <summary>
+    /// Handles SystemResumingMessage - system is resuming from suspend/standby.
+    /// Enables grace period to ignore incorrect battery updates.
+    /// </summary>
+    public void Receive(SystemResumingMessage message)
+    {
+        lock (_resumeLock)
+        {
+            _lastResumeTime = DateTimeOffset.Now;
+            DiagnosticLogger.Log($"LogiDeviceCollection: Resume detected - " +
+                $"battery updates suppressed for {ResumeGracePeriod.TotalSeconds}s");
+        }
+    }
+
+    /// <summary>
+    /// Check if we're in the grace period after system resume.
+    /// Used to ignore incorrect battery updates from devices reconnecting.
+    /// </summary>
+    private bool IsInResumeGracePeriod()
+    {
+        lock (_resumeLock)
+        {
+            if (_lastResumeTime == DateTimeOffset.MinValue)
+                return false;
+
+            var timeSinceResume = DateTimeOffset.Now - _lastResumeTime;
+            return timeSinceResume < ResumeGracePeriod;
+        }
     }
 
     public void OnInitMessage(InitMessage initMessage)
@@ -173,6 +217,16 @@ public class LogiDeviceCollection : ILogiDeviceCollection
     {
         _dispatcher.BeginInvoke(() =>
         {
+            // Check if in grace period after resume - ignore incorrect battery data
+            if (IsInResumeGracePeriod())
+            {
+                var timeSinceResume = (DateTimeOffset.Now - _lastResumeTime).TotalSeconds;
+                DiagnosticLogger.Log(
+                    $"Battery update IGNORED (resume grace period +{timeSinceResume:F1}s): " +
+                    $"{updateMessage.deviceId} = {updateMessage.batteryPercentage}%");
+                return;  // Discard the update
+            }
+
             var device = Devices.FirstOrDefault(dev => dev.DeviceId == updateMessage.deviceId);
             if (device == null)
             {
