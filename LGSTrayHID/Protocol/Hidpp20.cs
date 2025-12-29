@@ -58,7 +58,8 @@ public readonly struct Hidpp20
     /// 3. Feature index matches a known battery feature (0x1000, 0x1001, 0x1004)
     /// </remarks>
     public bool IsBatteryEvent(byte featureIndex) =>
-                GetFeatureIndex() == featureIndex && GetFunctionId() == BatteryEventFunction.BATTERY_STATUS_BROADCAST;
+                    GetFeatureIndex() == featureIndex && 
+                    GetFunctionId() == BatteryEventFunction.BATTERY_STATUS_BROADCAST;
 
     /// <summary>
     /// Check if this is a DJ protocol notification (not HID++ message).
@@ -128,4 +129,9 @@ public readonly struct Hidpp20
     /// <returns>True if the response matches the request</returns>
     public bool MatchesRequest(Hidpp20 request) => GetFeatureIndex() == request.GetFeatureIndex() &&
                                                    GetSoftwareId() == request.GetSoftwareId();
+
+    public override string ToString()
+    {
+        return BitConverter.ToString(_data).Replace("-", " ");
+    }
 }

@@ -376,10 +376,10 @@ public class HidppDevice : IDisposable
         var batStatus = batteryUpdate.Value;
 
         // Exceptional battery event, skip publish (some devices send spurious events)
-        if (batStatus.status == PowerSupplyStatus.POWER_SUPPLY_STATUS_CHARGING &&
-            batStatus.batteryPercentage == 15)
+        if (batStatus.batteryPercentage == 15)
         {
             DiagnosticLogger.Log($"[{DeviceName}] Exceptional battery event detected (Charging at 15%), skipping update publish");
+            DiagnosticLogger.Log($"[{DeviceName}] Exceptional battery event message: {message}");
             return true;
 
         }

@@ -217,15 +217,17 @@ public class LogiDeviceCollection : ILogiDeviceCollection,
     {
         _dispatcher.BeginInvoke(() =>
         {
+            // Grace period check disabled , we handle 15% event in HidppDevice instead
+
             // Check if in grace period after resume - ignore incorrect battery data
-            if (IsInResumeGracePeriod())
-            {
-                var timeSinceResume = (DateTimeOffset.Now - _lastResumeTime).TotalSeconds;
-                DiagnosticLogger.Log(
-                    $"Battery update IGNORED (resume grace period +{timeSinceResume:F1}s): " +
-                    $"{updateMessage.deviceId} = {updateMessage.batteryPercentage}%");
-                return;  // Discard the update
-            }
+            //if (IsInResumeGracePeriod())
+            //{
+            //    var timeSinceResume = (DateTimeOffset.Now - _lastResumeTime).TotalSeconds;
+            //    DiagnosticLogger.Log(
+            //        $"Battery update IGNORED (resume grace period +{timeSinceResume:F1}s): " +
+            //        $"{updateMessage.deviceId} = {updateMessage.batteryPercentage}%");
+            //    return;  // Discard the update
+            //}
 
             var device = Devices.FirstOrDefault(dev => dev.DeviceId == updateMessage.deviceId);
             if (device == null)
