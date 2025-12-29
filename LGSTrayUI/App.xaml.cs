@@ -1,9 +1,11 @@
-﻿using LGSTrayCore.Interfaces;
+﻿using CommunityToolkit.Mvvm.Messaging;
+using LGSTrayCore.Interfaces;
 using LGSTrayCore.Managers;
 using LGSTrayPrimitives;
 using LGSTrayPrimitives.Interfaces;
 using LGSTrayPrimitives.IPC;
 using LGSTrayUI.Interfaces;
+using LGSTrayUI.Messages;
 using LGSTrayUI.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,6 +35,7 @@ public partial class App : Application
     private IEnumerable<IDeviceManager>? _deviceManagers; // Cached device managers for wake handler
     private PowerNotificationWindow? _powerWindow; // Hidden window for Modern Standby notifications
     private NotificationService? _notificationService; // Cached for power event handling
+    private IMessenger? _messenger; // Cached messenger for power event handling
 
     /// <summary>
     /// Gets whether logging is enabled (--log flag).
@@ -118,6 +121,9 @@ public partial class App : Application
         builder.Services.Configure<AppSettings>(config);
         builder.Services.AddSingleton(appSettings);
 
+        // Register WeakReferenceMessenger for intra-process messaging (power events, etc.)
+        builder.Services.AddSingleton<IMessenger>(WeakReferenceMessenger.Default);
+
         builder.Services.AddLGSMessagePipe(true);
         builder.Services.AddWebSocketClientFactory();
         builder.Services.AddSingleton<UserSettingsWrapper>();
@@ -144,9 +150,12 @@ public partial class App : Application
         var host = builder.Build();
         _host = host; // Store host reference for wake handler
 
+        // Get messenger from DI
+        var messenger = host.Services.GetRequiredService<IMessenger>();
+
         // Create hidden window for Modern Standby power notifications
         // This works on both S3 (traditional sleep) and S0 (Modern Standby) systems
-        _powerWindow = new PowerNotificationWindow(this);
+        _powerWindow = new PowerNotificationWindow(this, messenger);
         _powerWindow.Show(); // Must call Show() to initialize window handle
         _powerWindow.Hide(); // Then hide immediately
 
@@ -161,16 +170,16 @@ public partial class App : Application
             case Microsoft.Win32.PowerModes.Resume:
                 DiagnosticLogger.Log("System resumed from sleep (SystemEvents.PowerModeChanged)");
 
-                // Resume notifications
-                GetNotificationService()?.Resume();
+                // Send message to resume notifications
+                GetMessenger()?.Send(new SystemResumingMessage());
 
                 await HandleSystemResumeAsync();
                 break;
             case Microsoft.Win32.PowerModes.Suspend:
                 DiagnosticLogger.Log("System is suspending to sleep (SystemEvents.PowerModeChanged)");
 
-                // Suspend notifications
-                GetNotificationService()?.Suspend();
+                // Send message to suspend notifications
+                GetMessenger()?.Send(new SystemSuspendingMessage());
                 break;
         }
     }
@@ -223,6 +232,18 @@ public partial class App : Application
             _notificationService = _host.Services.GetService<NotificationService>();
         }
         return _notificationService;
+    }
+
+    /// <summary>
+    /// Gets the IMessenger instance from DI container (lazy cached).
+    /// </summary>
+    public IMessenger? GetMessenger()
+    {
+        if (_messenger == null && _host != null)
+        {
+            _messenger = _host.Services.GetRequiredService<IMessenger>();
+        }
+        return _messenger;
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -334,6 +355,7 @@ internal class PowerNotificationWindow : Window
 {
     private IntPtr _notificationHandle = IntPtr.Zero;
     private readonly App _app;
+    private readonly IMessenger _messenger;
 
     // P/Invoke declarations for power management
     [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
@@ -347,9 +369,10 @@ internal class PowerNotificationWindow : Window
     private const int PBT_APMRESUMEAUTOMATIC = 0x0012;
     private const int PBT_APMSUSPEND = 0x0004;
 
-    public PowerNotificationWindow(App app)
+    public PowerNotificationWindow(App app, IMessenger messenger)
     {
         _app = app;
+        _messenger = messenger;
 
         // Create hidden window
         Width = 0;
@@ -405,15 +428,15 @@ internal class PowerNotificationWindow : Window
             {
                 DiagnosticLogger.Log("System suspending (WM_POWERBROADCAST)");
 
-                // Suspend notifications
-                _app.GetNotificationService()?.Suspend();
+                // Send message to suspend notifications
+                _messenger.Send(new SystemSuspendingMessage());
             }
             else if (powerEvent == PBT_APMRESUMEAUTOMATIC)
             {
                 DiagnosticLogger.Log("System resumed (WM_POWERBROADCAST)");
 
-                // Resume notifications
-                _app.GetNotificationService()?.Resume();
+                // Send message to resume notifications
+                _messenger.Send(new SystemResumingMessage());
 
                 // Call the app's resume handler asynchronously
                 _ = _app.HandleSystemResumeAsync();

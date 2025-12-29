@@ -1,6 +1,8 @@
-﻿using LGSTrayCore.Interfaces;
+﻿using CommunityToolkit.Mvvm.Messaging;
+using LGSTrayCore.Interfaces;
 using LGSTrayPrimitives;
 using LGSTrayPrimitives.MessageStructs;
+using LGSTrayUI.Messages;
 using MessagePipe;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -14,12 +16,15 @@ using System.Threading.Tasks;
 
 namespace LGSTrayUI.Services;
 
-public class NotificationService : IHostedService
+public class NotificationService : IHostedService,
+    IRecipient<SystemSuspendingMessage>,
+    IRecipient<SystemResumingMessage>
 {
     private readonly INotificationManager _notificationManager;
     private readonly ISubscriber<IPCMessage> _subscriber;
     private readonly ILogiDeviceCollection _deviceCollection;
     private readonly NotificationSettings _notificationSettings;
+    private readonly IMessenger _messenger;
     private IDisposable? _subscription;
 
     // Track the last threshold at which we notified for each device
@@ -37,18 +42,20 @@ public class NotificationService : IHostedService
 
     // Track resume timestamp to suppress spurious offline notifications during device reconnection
     private DateTimeOffset _lastResumeTime = DateTimeOffset.MinValue;
-    private static readonly TimeSpan ResumeGracePeriod = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan ResumeGracePeriod = TimeSpan.FromSeconds(10);
 
     public NotificationService(
         INotificationManager notificationManager,
         ISubscriber<IPCMessage> subscriber,
         ILogiDeviceCollection deviceCollection,
-        IOptions<AppSettings> appSettings)
+        IOptions<AppSettings> appSettings,
+        IMessenger messenger)
     {
         _notificationManager = notificationManager;
         _subscriber = subscriber;
         _deviceCollection = deviceCollection;
         _notificationSettings = appSettings.Value.Notifications;
+        _messenger = messenger;
         // Customize notification colors
         NotificationConstants.InformationBackgroundColor = System.Windows.Media.Brushes.SteelBlue;
         NotificationConstants.WarningBackgroundColor = System.Windows.Media.Brushes.DarkOrange;
@@ -66,6 +73,10 @@ public class NotificationService : IHostedService
             }
         });
 
+        // Register for power state messages
+        _messenger.Register<SystemSuspendingMessage>(this);
+        _messenger.Register<SystemResumingMessage>(this);
+
         return Task.CompletedTask;
     }
 
@@ -73,6 +84,9 @@ public class NotificationService : IHostedService
     {
         // Clean up subscription
         _subscription?.Dispose();
+
+        // Unregister from messenger
+        _messenger.UnregisterAll(this);
 
         return Task.CompletedTask;
     }
@@ -117,6 +131,22 @@ public class NotificationService : IHostedService
 
         var timeSinceResume = DateTimeOffset.Now - _lastResumeTime;
         return timeSinceResume < ResumeGracePeriod;
+    }
+
+    /// <summary>
+    /// Handles SystemSuspendingMessage - system is entering suspend/standby.
+    /// </summary>
+    public void Receive(SystemSuspendingMessage message)
+    {
+        Suspend();
+    }
+
+    /// <summary>
+    /// Handles SystemResumingMessage - system is resuming from suspend/standby.
+    /// </summary>
+    public void Receive(SystemResumingMessage message)
+    {
+        Resume();
     }
 
     private int[] GetBatteryLowThresholds() =>
