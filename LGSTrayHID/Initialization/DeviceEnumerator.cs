@@ -13,8 +13,8 @@ public class DeviceEnumerator
 {
     private readonly HidppReceiver _parent;
     private readonly DeviceLifecycleManager _lifecycleManager;
-    private const int TASK_DELAY = 2000;
-    private const int PING_ENUMERATE_DELAY = 5000;
+    private const int FALLBACK_DELAY = 2000;
+    private const int PING_ENUMERATE_DELAY = 20_000;
 
     public DeviceEnumerator(HidppReceiver parent, DeviceLifecycleManager lifecycleManager)
     {
@@ -29,20 +29,32 @@ public class DeviceEnumerator
     /// </summary>
     public async Task EnumerateDevicesAsync()
     {
+        // Force connected devices to announce themselves (0x41 messages)
+        // Then we handle Device ON Events to initialize them
+        await _parent.WriteRead10(
+                _parent.DevShort,
+                Hidpp10Commands.ForceDeviceAnnounce(),
+                1000
+            );
         // Strategy 1: Query receiver for device count + force announcements
-        byte numDevicesFound = await QueryAndAnnounceAsync();
+        //byte numDevicesFound = await QueryAndAnnounceAsync();
 
-        if (numDevicesFound > 0)
-        {
-            // Wait for device announcements to be processed by ProcessMessage
-            await Task.Delay(TASK_DELAY);
-        }
+        //if (numDevicesFound > 0)
+        //{
+        //    return;
+        //}
+        //else
+        //{
+        //    DiagnosticLogger.Log("No devices reported by receiver after query.");
+        //    await Task.Delay(FALLBACK_DELAY);
+        //    await FallbackPingEnumerationAsync();
+        //}
 
         // Strategy 2: Fallback ping-based enumeration (if no devices found)
-        if (_lifecycleManager.Count == 0)
-        {
-            await FallbackPingEnumerationAsync();
-        }
+        //if (_lifecycleManager.Count == 0)
+        //{
+        //    await FallbackPingEnumerationAsync();
+        //}
     }
 
     /// <summary>
