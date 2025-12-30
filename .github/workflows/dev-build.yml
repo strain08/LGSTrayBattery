@@ -57,30 +57,27 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ steps.version.outputs.tag }}
-        name: "🚧 Dev Build - ${{ steps.version.outputs.branch_name }} (${{ steps.version.outputs.timestamp }})"
+        name: "Dev Build - ${{ steps.version.outputs.branch_name }} (${{ steps.version.outputs.timestamp }})"
         draft: true
         prerelease: true
         generate_release_notes: false
         body: |
-          ## 🚧 Development Build - Testing Only
+          ## Dev Build - Testing Only
 
           **Branch:** `${{ github.ref_name }}`
           **Commit:** ${{ github.sha }}
           **Build Time:** ${{ steps.version.outputs.timestamp }}
 
-          ### 📦 Downloads
+          ### Downloads
           - **Standalone**: Includes .NET 9 runtime (larger, no dependencies)
           - **Framedep**: Requires .NET 9 runtime pre-installed (smaller)
 
-          ### ⚠️ Important
-          - This is a **test build** for verification purposes
-          - Not intended for production use
-          - Please report test results back to the development team
+          ### Notes
           - This release will be deleted after testing is complete
 
           ---
 
-          **Share this link with testers:** `https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.tag }}`
+          **Share link:** `https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.tag }}`
         files: |
           publish/LGSTrayBattery-*.zip
       env:
