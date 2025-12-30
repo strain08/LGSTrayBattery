@@ -35,7 +35,7 @@ public class MockWebSocketClient : IWebSocketClient
                 _reconnectionSubject = new Subject<ReconnectionInfo>();
                 _disposed = false;
             }
-            return _messageSubject;
+            return _messageSubject ?? throw new NullReferenceException();
         }
     }
 
@@ -56,7 +56,7 @@ public class MockWebSocketClient : IWebSocketClient
                 _reconnectionSubject = new Subject<ReconnectionInfo>();
                 _disposed = false;
             }
-            return _disconnectionSubject;
+            return _disconnectionSubject ?? throw new NullReferenceException();
         }
     }
 
@@ -72,7 +72,7 @@ public class MockWebSocketClient : IWebSocketClient
                 _reconnectionSubject = new Subject<ReconnectionInfo>();
                 _disposed = false;
             }
-            return _reconnectionSubject;
+            return _reconnectionSubject ?? throw new NullReferenceException();
         }
     }
 
