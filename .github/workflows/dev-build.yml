@@ -39,29 +39,60 @@ jobs:
         $branch = "${{ github.ref_name }}" -replace '/', '-'
         $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
         $suffix = "dev-$branch-$timestamp"
+        $tag = "dev-$branch-$timestamp"
         echo "suffix=$suffix" >> $env:GITHUB_OUTPUT
-        echo "short_suffix=dev-$timestamp" >> $env:GITHUB_OUTPUT
+        echo "tag=$tag" >> $env:GITHUB_OUTPUT
+        echo "branch_name=$branch" >> $env:GITHUB_OUTPUT
+        echo "timestamp=$timestamp" >> $env:GITHUB_OUTPUT
         Write-Host "Version suffix: $suffix"
+        Write-Host "Release tag: $tag"
       shell: pwsh
 
     # Build and publish packages
     - name: Build dev packages
       run: python publish.py --version-suffix="-${{ steps.version.outputs.suffix }}"
 
-    # Upload artifacts for download (retained for 7 days)
-    - name: Upload dev build artifacts
-      uses: actions/upload-artifact@v4
+    # Create draft release with build artifacts
+    - name: Create draft release
+      uses: softprops/action-gh-release@v2
       with:
-        name: LGSTrayBattery-${{ steps.version.outputs.short_suffix }}
-        path: publish/LGSTrayBattery-*.zip
-        retention-days: 7
+        tag_name: ${{ steps.version.outputs.tag }}
+        name: "🚧 Dev Build - ${{ steps.version.outputs.branch_name }} (${{ steps.version.outputs.timestamp }})"
+        draft: true
+        prerelease: true
+        generate_release_notes: false
+        body: |
+          ## 🚧 Development Build - Testing Only
 
-    # Add comment with download link (optional, requires write permissions)
-    - name: Comment build info
-      if: github.event_name == 'push'
+          **Branch:** `${{ github.ref_name }}`
+          **Commit:** ${{ github.sha }}
+          **Build Time:** ${{ steps.version.outputs.timestamp }}
+
+          ### 📦 Downloads
+          - **Standalone**: Includes .NET 9 runtime (larger, no dependencies)
+          - **Framedep**: Requires .NET 9 runtime pre-installed (smaller)
+
+          ### ⚠️ Important
+          - This is a **test build** for verification purposes
+          - Not intended for production use
+          - Please report test results back to the development team
+          - This release will be deleted after testing is complete
+
+          ---
+
+          **Share this link with testers:** `https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.tag }}`
+        files: |
+          publish/LGSTrayBattery-*.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    # Print release URL
+    - name: Print release info
       run: |
         Write-Host "✅ Dev build created successfully!"
-        Write-Host "Branch: ${{ github.ref_name }}"
-        Write-Host "Version suffix: ${{ steps.version.outputs.suffix }}"
-        Write-Host "Download artifacts from: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        Write-Host ""
+        Write-Host "📦 Draft Release URL:"
+        Write-Host "https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.tag }}"
+        Write-Host ""
+        Write-Host "Share this URL with your testers!"
       shell: pwsh
