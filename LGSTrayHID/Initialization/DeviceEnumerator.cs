@@ -83,7 +83,9 @@ public class DeviceEnumerator
             if (numDevicesFound > 0)
             {
                 // Setup event-driven wait for announcements
-                var completion = new TaskCompletionSource<int>();
+                // CRITICAL: RunContinuationsAsynchronously prevents deadlock when TrySetResult is called
+                // from within CreateDevice (which happens when Device 2 creation completes enumeration)
+                var completion = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
                 _lifecycleManager.SetExpectedDeviceCount(numDevicesFound, completion);
 
                 // Force connected devices to announce themselves (0x41 messages)

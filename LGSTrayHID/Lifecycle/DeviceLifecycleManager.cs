@@ -48,11 +48,21 @@ public class DeviceLifecycleManager
 
         lock (_devices)
         {
+            // Check if device already exists (replacement scenario)
+            bool isReplacement = _devices.ContainsKey(deviceIdx);
+            if (isReplacement)
+            {
+                DiagnosticLogger.Log($"[Device {deviceIdx}] Replacing existing device in collection");
+            }
+
             _devices[deviceIdx] = device;
 
             // Check if we've reached expected count during enumeration
             if (_enumerationCompletion != null && Count >= _expectedDeviceCount)
             {
+                DiagnosticLogger.Log($"[DeviceLifecycle] Enumeration complete - " +
+                                    $"Reached expected count {_expectedDeviceCount} " +
+                                    $"(triggered by device {deviceIdx} creation)");
                 _enumerationCompletion.TrySetResult(Count);
                 _enumerationCompletion = null;
             }

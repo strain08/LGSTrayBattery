@@ -31,13 +31,24 @@ public class DeviceAnnouncementHandler
         byte deviceIdx = buffer[1];
         bool isDeviceOn = (buffer[4] & 0x40) == 0;  // Bit 6 clear = ON, set = OFF
 
-        if (isDeviceOn)
+        try
         {
-            await HandleDeviceOnAsync(deviceIdx, buffer);
+            if (isDeviceOn)
+            {
+                await HandleDeviceOnAsync(deviceIdx, buffer);
+                DiagnosticLogger.Log($"[HandleAnnouncement] Device {deviceIdx} ON handler completed");
+            }
+            else
+            {
+                await HandleDeviceOffAsync(deviceIdx, buffer);
+                DiagnosticLogger.Log($"[HandleAnnouncement] Device {deviceIdx} OFF handler completed");
+            }
         }
-        else
+        catch (Exception ex)
         {
-            await HandleDeviceOffAsync(deviceIdx, buffer);
+            DiagnosticLogger.LogError($"[HandleAnnouncement] Device {deviceIdx} announcement handler exception: {ex.GetType().Name} - {ex.Message}");
+            DiagnosticLogger.LogError($"[HandleAnnouncement] Stack trace: {ex.StackTrace}");
+            throw;
         }
     }
 
@@ -50,10 +61,24 @@ public class DeviceAnnouncementHandler
         DiagnosticLogger.Log($"[Device ON Event] Index: {deviceIdx}, " +
                             $"Params: [0x{buffer[3]:X02} 0x{buffer[4]:X02} 0x{buffer[5]:X02} 0x{buffer[6]:X02}]");
 
+        // Diagnostic: Check device state before proceeding
+        bool deviceExists = _lifecycleManager.TryGetDevice(deviceIdx, out HidppDevice? existingDevice);
+        if (deviceExists)
+        {
+            DiagnosticLogger.Log($"[Device {deviceIdx}] Existing device found - " +
+                                $"Identifier: {existingDevice?.Identifier ?? "null"}, " +
+                                $"IsOnline: {existingDevice?.IsOnline}, " +
+                                $"Disposed: {existingDevice?.Disposed}");
+        }
+        else
+        {
+            DiagnosticLogger.Log($"[Device {deviceIdx}] No existing device found, will create new device");
+        }
+
         // Check if device is already initialized and healthy
         if (_lifecycleManager.IsDeviceInitialized(deviceIdx))
         {
-            DiagnosticLogger.Log($"[Device {deviceIdx}] Device ON event ignored (already initialized)");
+            DiagnosticLogger.Log($"[Device {deviceIdx}] Device ON event ignored (already initialized and online)");
             return;
         }
 
@@ -64,35 +89,78 @@ public class DeviceAnnouncementHandler
             return;
         }
 
-        HidppDevice device = _lifecycleManager.CreateDevice(deviceIdx);
-        device.NotifyDeviceOn(); // Set device ON timestamp
+        DiagnosticLogger.Log($"[Device {deviceIdx}] Guard clauses passed, proceeding with initialization");
 
-        // Spawn initialization thread with sequential enforcement
-        new Thread(async () =>
+        HidppDevice device;
+        try
+        {
+            DiagnosticLogger.Log($"[Device {deviceIdx}] Calling CreateDevice...");
+            device = _lifecycleManager.CreateDevice(deviceIdx);
+            DiagnosticLogger.Log($"[Device {deviceIdx}] CreateDevice completed, calling NotifyDeviceOn...");
+
+            device.NotifyDeviceOn(); // Set device ON timestamp
+            DiagnosticLogger.Log($"[Device {deviceIdx}] NotifyDeviceOn completed");
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogger.LogError($"[Device {deviceIdx}] Exception during device creation/notification: {ex.GetType().Name} - {ex.Message}");
+            DiagnosticLogger.LogError($"[Device {deviceIdx}] Stack trace: {ex.StackTrace}");
+            return;
+        }
+
+        DiagnosticLogger.Log($"[Device {deviceIdx}] Creating Task.Run for initialization...");
+
+        // Fire-and-forget initialization task with proper async handling
+        var task = Task.Run(async () =>
         {
             try
             {
+                DiagnosticLogger.Log($"[Device {deviceIdx}] Initialization task started, waiting for stabilization...");
                 await Task.Delay(1000); // Device stabilization delay
 
+                // Check if device still valid after delay (may have been disposed during resume)
+                if (device.Disposed)
+                {
+                    DiagnosticLogger.LogWarning($"[Device {deviceIdx}] Device disposed during stabilization delay, aborting initialization");
+                    return;
+                }
+
                 // Wait for previous device initialization to complete (sequential init)
+                DiagnosticLogger.Log($"[Device {deviceIdx}] Waiting for semaphore...");
                 await _initSemaphore.WaitAsync();
                 try
                 {
-                    DiagnosticLogger.Log($"Starting initialization for device {deviceIdx}");
+                    // Final check before expensive initialization
+                    if (device.Disposed)
+                    {
+                        DiagnosticLogger.LogWarning($"[Device {deviceIdx}] Device disposed while waiting for semaphore, aborting initialization");
+                        return;
+                    }
+
+                    DiagnosticLogger.Log($"[Device {deviceIdx}] Semaphore acquired, starting initialization");
                     await device.InitAsync();
-                    DiagnosticLogger.Log($"Completed initialization for device {deviceIdx}");
+                    DiagnosticLogger.Log($"[Device {deviceIdx}] Initialization completed successfully");
                 }
                 finally
                 {
                     _initSemaphore.Release();
+                    DiagnosticLogger.Log($"[Device {deviceIdx}] Semaphore released");
                 }
             }
             catch (Exception ex)
             {
-                DiagnosticLogger.LogError($"Device {deviceIdx} initialization failed: {ex.Message}");
+                // Log with full stack trace for diagnosis
+                DiagnosticLogger.LogError($"[Device {deviceIdx}] Initialization failed: {ex.GetType().Name} - {ex.Message}");
+                if (ex.StackTrace != null)
+                {
+                    DiagnosticLogger.LogError($"[Device {deviceIdx}] Stack trace: {ex.StackTrace}");
+                }
             }
-        }).Start();
+        });
 
+        DiagnosticLogger.Log($"[Device {deviceIdx}] Task.Run created successfully, task ID: {task.Id}, status: {task.Status}");
+
+        DiagnosticLogger.Log($"[Device {deviceIdx}] HandleDeviceOnAsync completing...");
         await Task.CompletedTask; // Suppress async warning
     }
 
