@@ -85,7 +85,7 @@ public class HidppReceiver : IDisposable
         return await _correlator.SendHidpp10AndWaitAsync(
             hidDevicePtr,
             buffer,
-            matcher: response => (response[2] == HidppResponse.ERROR) || (response[2] == buffer[2]),
+            matcher: response => response[2] == buffer[2],
             timeout: timeout,
             earlyExit: null
         );
@@ -99,6 +99,7 @@ public class HidppReceiver : IDisposable
             hidDevicePtr,
             buffer,
             matcher: response => (response.GetFeatureIndex() == buffer.GetFeatureIndex()) &&
+                                 (response.GetDeviceIdx() == buffer.GetDeviceIdx()) &&
                                  (response.GetSoftwareId() == AppConstants.SW_ID),
             timeout: timeout,
             earlyExit: ignoreHID10 ? null : response => response.IsError()
@@ -116,8 +117,9 @@ public class HidppReceiver : IDisposable
             DevShort,
             command,
             matcher: response => (response.GetFeatureIndex() == 0x00) &&
-                                (response.GetSoftwareId() == AppConstants.SW_ID) &&
-                                (response.GetParam(2) == pingPayload),
+                                 (response.GetDeviceIdx() == deviceId) &&
+                                 (response.GetSoftwareId() == AppConstants.SW_ID) &&
+                                 (response.GetParam(2) == pingPayload),
             timeout: timeout,
             earlyExit: ignoreHIDPP10 ? null : response => response.IsError()
         );
