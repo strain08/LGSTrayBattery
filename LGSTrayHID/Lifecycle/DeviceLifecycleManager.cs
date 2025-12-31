@@ -1,4 +1,5 @@
 using LGSTrayPrimitives;
+using LGSTrayHID.Protocol;
 
 namespace LGSTrayHID.Lifecycle;
 
@@ -98,6 +99,29 @@ public class DeviceLifecycleManager
             // Record this initialization attempt
             _lastInitTime[deviceIdx] = now;
             return true;
+        }
+    }
+
+    /// <summary>
+    /// Checks if a device at the given index is already initialized and healthy.
+    /// A device is considered initialized if it has a valid identifier, is not disposed, and is online.
+    /// </summary>
+    /// <param name="deviceIdx">Device index to check</param>
+    /// <returns>True if device exists, is initialized, not disposed, and online</returns>
+    public bool IsDeviceInitialized(byte deviceIdx)
+    {
+        lock (_devices)
+        {
+            if (!_devices.TryGetValue(deviceIdx, out var device))
+                return false;
+
+            // Check if device is initialized (has identifier), not disposed, and online
+            // IsOnline=false indicates device went offline (OFF event) and needs reinitialization
+            // Note: Polling may be cancelled due to battery events (keepPollingWithEvents=false),
+            // but device is still online and doesn't need reinitialization
+            return !string.IsNullOrEmpty(device.Identifier)
+                && !device.Disposed
+                && device.IsOnline;
         }
     }
 

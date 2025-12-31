@@ -42,6 +42,10 @@ public class HidppDevice : IDisposable
     private readonly CancellationTokenSource _poolingCts = new();
     public void CancelPooling() => _poolingCts.Cancel();
 
+    // Track device online/offline state (independent of polling state)
+    private bool _isOnline = false;
+    public bool IsOnline => _isOnline;
+    public void SetOffline() => _isOnline = false;
 
     private int _disposeCount = 0;
     public bool Disposed => _disposeCount > 0;
@@ -247,6 +251,9 @@ public class HidppDevice : IDisposable
         );
 
         DiagnosticLogger.Log($"HID device registered - {Identifier} ({DeviceName}) [Signature: {deviceSignature}]");
+
+        // Mark device as online after successful initialization
+        _isOnline = true;
 
         // Force next battery update to bypass deduplication
         // This ensures fresh timestamp even if battery % unchanged after reconnect
