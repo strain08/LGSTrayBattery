@@ -2,8 +2,6 @@
 
 internal static class AppConstants
 {
-    public const byte SW_ID = 0x0A;
-
     public const int INIT_PING_TIMEOUT_MS = 5000;
     public const int WRITE_READ_TIMEOUT_MS = 5000;
 
