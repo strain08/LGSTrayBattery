@@ -71,4 +71,38 @@ public static class BatteryStatusParser
         // Charging flag not set - battery is discharging
         return POWER_SUPPLY_STATUS_DISCHARGING;
     }
+
+    /// <summary>
+    /// Validate battery level flags from HID++ Unified Battery features (0x1000 and 0x1004).
+    /// Battery level flags should have exactly ONE bit set (mutually exclusive).
+    /// </summary>
+    /// <param name="levelFlags">Level flags byte from response parameter 1</param>
+    /// <returns>True if flags are valid, false if corrupt/invalid</returns>
+    /// <remarks>
+    /// (!) Not used for Feature 1001 (Voltage), which uses a different encoding.
+    /// Valid flags (only one bit set in lower nibble):
+    /// - 0x01: Critical
+    /// - 0x02: Low
+    /// - 0x04: Good
+    /// - 0x08: Full
+    ///
+    /// Invalid examples:
+    /// - 0x00: No flags set (uninitialized)
+    /// - 0x0F: All flags set (corrupt data, seen during device wake/init)
+    /// - 0x03, 0x05, etc.: Multiple flags set (protocol violation)
+    /// </remarks>
+    public static bool IsValidBatteryLevelFlags(byte levelFlags)
+    {
+        // Mask to lower 4 bits (bits 0-3)
+        byte flags = (byte)(levelFlags & 0x0F);
+
+        // Check if exactly one bit is set using bit manipulation
+        // A number has exactly one bit set if: (n & (n-1)) == 0 and n != 0
+        // Examples:
+        // - 0x01 (0b0001): 0x01 & 0x00 = 0x00  Valid
+        // - 0x04 (0b0100): 0x04 & 0x03 = 0x00  Valid
+        // - 0x0F (0b1111): 0x0F & 0x0E = 0x0E  Invalid (multiple bits)
+        // - 0x00 (0b0000): Special case        Invalid (no bits)
+        return flags != 0 && (flags & (flags - 1)) == 0;
+    }
 }

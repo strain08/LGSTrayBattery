@@ -1,4 +1,5 @@
 using LGSTrayHID.Protocol;
+using LGSTrayPrimitives;
 
 namespace LGSTrayHID.Features;
 
@@ -37,8 +38,17 @@ public class BatteryUnifiedLevel : IBatteryFeature
 
         // Parse response
         // Param 0: Battery percentage (0-100)
+        // Param 1: Battery level flags (validate before using)
         // Param 2: Charging status code
         double percentage = response.GetParam(0);
+        byte levelFlags = response.GetParam(1);
+
+        if (!BatteryStatusParser.IsValidBatteryLevelFlags(levelFlags))
+        {
+            DiagnosticLogger.Log($"[Feature {FeatureId}] Invalid battery level flags: 0x{levelFlags:X2} (multiple or no flags set). Rejecting corrupt data.");
+            return null;
+        }
+
         var status = BatteryStatusParser.ParseUnifiedBatteryStatus(response.GetParam(2));
 
         // Feature 0x1000 doesn't provide voltage info
@@ -56,11 +66,17 @@ public class BatteryUnifiedLevel : IBatteryFeature
         {
             return null;
         }
-
-        // Event payload format matches query response format for Feature 0x1000:
-        // Param 0: Battery percentage (0-100)
-        // Param 2: Charging status code
+        
         double percentage = eventMessage.GetParam(0);
+        byte levelFlags = eventMessage.GetParam(1);
+
+        // Validate battery level flags before accepting event
+        if (!BatteryStatusParser.IsValidBatteryLevelFlags(levelFlags))
+        {
+            DiagnosticLogger.Log($"[Feature 0x1004 Event] Invalid battery level flags: 0x{levelFlags:X2}. Rejecting corrupt event.");
+            return null;
+        }
+
         var status = BatteryStatusParser.ParseUnifiedBatteryStatus(eventMessage.GetParam(2));
 
         // Feature 0x1000 doesn't provide voltage info
