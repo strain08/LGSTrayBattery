@@ -262,7 +262,7 @@ public class HidppDevice : IDisposable
         
         if (_batteryFeature == null)
         {
-            await Task.Delay(1000);
+            await Task.Delay(1000, _cancellationSource.Token);
             return;
         }        
 
@@ -287,67 +287,66 @@ public class HidppDevice : IDisposable
     }
 
     /// <summary>
-    /// Poll the battery status at regular intervals defined in settings RetryTime
+    /// Poll the battery status at regular intervals defined in settings
     /// </summary>
     private async Task PollBattery()
     {
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_cancellationSource.Token, _poolingCts.Token);
         var linkedToken = linkedCts.Token;
-        DateTimeOffset now;
-        DateTimeOffset expectedUpdateTime;
 
-        DiagnosticLogger.Log($"[{DeviceName}] Pooling started.");
-        while (!linkedToken.IsCancellationRequested)
+        var pollInterval = GetPollInterval();
+        DiagnosticLogger.Log($"[{DeviceName}] Polling started (interval: {pollInterval}s).");
+
+        try
         {
-            now = DateTimeOffset.Now;
-#if DEBUG
-            expectedUpdateTime = lastUpdate.AddSeconds(10);
-#else
-            // clamp poll period between 20 seconds and 1 hour
-            expectedUpdateTime = lastUpdate.AddSeconds(Math.Clamp(GlobalSettings.settings.PollPeriod, 20, 3600));
-#endif
-            if (now < expectedUpdateTime)
+            while (!linkedToken.IsCancellationRequested)
             {
-                var delay = expectedUpdateTime - now;
-                DiagnosticLogger.Log($"[{DeviceName}] Polling battery in {Math.Round(delay.TotalSeconds)}s...");
+                var now = DateTimeOffset.Now;
+                var nextPollTime = lastUpdate.AddSeconds(pollInterval);
+                var delayMs = Math.Max(0, (int)(nextPollTime - now).TotalMilliseconds);
+
+                if (delayMs > 0)
+                {
+                    await Task.Delay(delayMs, linkedToken);
+                }
+
+                bool updateSucceeded = false;
                 try
                 {
-                    await Task.Delay((int)delay.TotalMilliseconds, linkedToken);
+                    await UpdateBattery();
+                    updateSucceeded = true;
                 }
-                catch (OperationCanceledException)
+                catch (Exception ex)
                 {
-                    DiagnosticLogger.Log($"[{DeviceName}] Polling cancelled (OperationCanceledException)");
-                    break;
+                    DiagnosticLogger.LogWarning($"[{DeviceName}] Battery update failed: {ex.Message}");
+                    // Continue polling - will retry on next iteration
+                }
+
+                // CRITICAL: Prevent tight loop on repeated failures
+                // If UpdateBattery failed and didn't update lastUpdate, we need a minimum delay
+                // to prevent immediate retry (which would spin in a tight loop)
+                if (!updateSucceeded)
+                {
+                    DiagnosticLogger.Log($"[{DeviceName}] Adding 10s retry delay after failure");
+                    await Task.Delay(10_000, linkedToken);
                 }
             }
-            try
-            {
-                await UpdateBattery();
-            }
-            catch (OperationCanceledException) // Expected during cancellation
-            {                
-                DiagnosticLogger.Log($"[{DeviceName}] Polling cancelled (OperationCanceledException)");
-                break;
-            }
-            catch (Exception ex) // Unexpected errors
-            {                
-                DiagnosticLogger.LogWarning($"[{DeviceName}] Polling stopped due to exception: {ex.GetType().Name} - {ex.Message}");
-                break;
-            }
-            // Hardcoded 10 second minimum delay between polls to prevent tight loop in case of immediate failures
-            // TODO: implement retry on failure
-            try
-            {
-                await Task.Delay(10_000, linkedToken);
-            }
-            catch (OperationCanceledException)
-            {
-                DiagnosticLogger.Log($"[{DeviceName}] Polling cancelled (OperationCanceledException)");
-                break;
-            }
-
         }
-        DiagnosticLogger.Log($"[{DeviceName}] Pooling stopped.");
+        catch (OperationCanceledException)
+        {
+            DiagnosticLogger.Log($"[{DeviceName}] Polling cancelled");
+        }
+
+        DiagnosticLogger.Log($"[{DeviceName}] Polling stopped.");
+    }
+
+    private int GetPollInterval()
+    {
+#if DEBUG
+        return 10;
+#else
+        return Math.Clamp(GlobalSettings.settings.PollPeriod, 20, 3600);
+#endif
     }
 
     public async Task UpdateBattery(bool forceIpcUpdate = false)
@@ -507,6 +506,7 @@ public class HidppDevice : IDisposable
 
                 // Dispose managed resources
                 _cancellationSource.Dispose();
+                _poolingCts.Dispose();
                 _initSemaphore.Dispose();
             }
 
