@@ -20,6 +20,7 @@ public class HidppDevice : IDisposable
 
     private IBatteryFeature? _batteryFeature;
     private DateTimeOffset lastUpdate = DateTimeOffset.MinValue;
+    private int _consecutivePollFailures = 0;
 
     // Battery event tracking
     private byte _batteryFeatureIndex = 0xFF; // 0xFF = not set
@@ -66,27 +67,28 @@ public class HidppDevice : IDisposable
             Hidpp20 ret;
 
             // Sync Ping with retry logic for sleeping devices
-            const int maxRetries = 10;
-            const int initialDelay = 2000; // 2 seconds
+            // Use exponential backoff for device initialization
+            var backoff = GlobalSettings.InitBackoff;
             bool pingSuccess = false;
+            int lastSuccessCount = 0;
 
-            for (int retry = 0; retry < maxRetries && !pingSuccess; retry++)
+            await foreach (var attempt in backoff.GetAttemptsAsync(_cancellationSource.Token))
             {
                 // Add delay before retry attempts (not on first attempt)
-                if (retry > 0)
+                if (attempt.AttemptNumber > 1)
                 {
-                    int delay = initialDelay * (int)Math.Pow(2, retry - 1);
-                    DiagnosticLogger.Log($"Retrying HID device index {DeviceIdx} after {delay}ms delay (attempt {retry + 1}/{maxRetries})");
-                    await Task.Delay(delay);
+                    DiagnosticLogger.Log($"Retrying HID device index {DeviceIdx} after {attempt.Delay.TotalMilliseconds}ms delay (attempt {attempt.AttemptNumber}/{backoff.MaxAttempts})");
+                    await Task.Delay(attempt.Delay, _cancellationSource.Token);
                 }
 
-                // Ping test
+                // Ping test with progressive timeout
                 int successCount = 0;
-                int successThresh = 3;
-                DiagnosticLogger.Log($"Starting ping test for HID device index {DeviceIdx}");
+                const int successThresh = 3;
+                DiagnosticLogger.Log($"Starting ping test for HID device index {DeviceIdx} (timeout: {attempt.Timeout.TotalMilliseconds}ms)");
+
                 for (int i = 0; i < 10; i++)
                 {
-                    var ping = await Parent.Ping20(DeviceIdx, AppConstants.INIT_PING_TIMEOUT_MS);
+                    var ping = await Parent.Ping20(DeviceIdx, (int)attempt.Timeout.TotalMilliseconds);
                     if (ping)
                     {
                         successCount++;
@@ -103,10 +105,18 @@ public class HidppDevice : IDisposable
                     }
                 }
 
-                // Log result if this is the last attempt and still failing
-                if (!pingSuccess && retry == maxRetries - 1)
+                lastSuccessCount = successCount;
+
+                // Success - break out of retry loop
+                if (pingSuccess)
                 {
-                    DiagnosticLogger.LogWarning($"HID device index {DeviceIdx} failed ping test after {maxRetries} retries ({successCount}/{successThresh} successes)");
+                    break;
+                }
+
+                // Log result if this is the last attempt and still failing
+                if (attempt.AttemptNumber == backoff.MaxAttempts)
+                {
+                    DiagnosticLogger.LogWarning($"HID device index {DeviceIdx} failed ping test after {backoff.MaxAttempts} attempts ({lastSuccessCount}/{successThresh} successes)");
                     return;
                 }
             }
@@ -123,20 +133,39 @@ public class HidppDevice : IDisposable
                 Hidpp20Commands.GetFeatureCount(DeviceIdx, FeatureMap[HidppFeature.FEATURE_SET]));
             int featureCount = ret.GetParam(0);
 
-            // Enumerate Features
+            // Enumerate Features with retry logic
+            var featureBackoff = GlobalSettings.FeatureEnumBackoff;
             for (byte i = 0; i <= featureCount; i++)
             {
-                ret = await Parent.WriteRead20(Parent.DevShort,
-                    Hidpp20Commands.EnumerateFeature(DeviceIdx, FeatureMap[HidppFeature.FEATURE_SET], i), AppConstants.WRITE_READ_TIMEOUT_MS);
+                Hidpp20? enumResult = null;
 
-                // Check if we got a valid response (timeout returns empty array)
-                if (ret.Length == 0)
+                // Retry feature enumeration with exponential backoff
+                await foreach (var attempt in featureBackoff.GetAttemptsAsync(_cancellationSource.Token))
                 {
-                    DiagnosticLogger.LogWarning($"[Device {DeviceIdx}] Feature enumeration timeout at index {i}, stopping enumeration");
+                    if (attempt.AttemptNumber > 1)
+                    {
+                        await Task.Delay(attempt.Delay, _cancellationSource.Token);
+                    }
+
+                    enumResult = await Parent.WriteRead20(Parent.DevShort,
+                        Hidpp20Commands.EnumerateFeature(DeviceIdx, FeatureMap[HidppFeature.FEATURE_SET], i),
+                        (int)attempt.Timeout.TotalMilliseconds);
+
+                    // Success - got valid response
+                    if (enumResult?.Length > 0)
+                    {
+                        break;
+                    }
+                }
+
+                // Check if we got a valid response after all retries
+                if (enumResult?.Length == 0 || enumResult == null)
+                {
+                    DiagnosticLogger.LogWarning($"[Device {DeviceIdx}] Feature enumeration timeout at index {i} after {featureBackoff.MaxAttempts} attempts, stopping enumeration");
                     break;
                 }
 
-                ushort featureId = ret.GetFeatureId();
+                ushort featureId = enumResult.Value.GetFeatureId();
 
                 FeatureMap[featureId] = i;
 
@@ -315,6 +344,7 @@ public class HidppDevice : IDisposable
                 {
                     await UpdateBattery();
                     updateSucceeded = true;
+                    _consecutivePollFailures = 0; // Reset on success
                 }
                 catch (Exception ex)
                 {
@@ -323,12 +353,13 @@ public class HidppDevice : IDisposable
                 }
 
                 // CRITICAL: Prevent tight loop on repeated failures
-                // If UpdateBattery failed and didn't update lastUpdate, we need a minimum delay
-                // to prevent immediate retry (which would spin in a tight loop)
+                // Use progressive backoff based on consecutive failures
                 if (!updateSucceeded)
                 {
-                    DiagnosticLogger.Log($"[{DeviceName}] Adding 10s retry delay after failure");
-                    await Task.Delay(10_000, linkedToken);
+                    _consecutivePollFailures++;
+                    var retryDelay = GlobalSettings.BatteryBackoff.GetDelay(_consecutivePollFailures);
+                    DiagnosticLogger.Log($"[{DeviceName}] Adding {retryDelay.TotalSeconds}s retry delay after failure (consecutive failures: {_consecutivePollFailures})");
+                    await Task.Delay(retryDelay, linkedToken);
                 }
             }
         }

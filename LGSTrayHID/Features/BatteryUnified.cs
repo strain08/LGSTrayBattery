@@ -25,15 +25,34 @@ public class BatteryUnified : IBatteryFeature
             .WithFunction(BatteryFunction.GET_CAPABILITY)
             .Build();
 
-        // Send command and wait for response (with extended timeout)
-        Hidpp20 response = await device.Parent.WriteRead20(
-            device.Parent.DevShort,
-            command,
-            timeout: AppConstants.UNIFIED_QueryTimeout);
+        // Retry battery query with exponential backoff
+        var backoff = GlobalSettings.BatteryBackoff;
+        Hidpp20? response = null;
 
-        // Check if request timed out or failed
-        if (response.Length == 0)
+        await foreach (var attempt in backoff.GetAttemptsAsync(CancellationToken.None))
         {
+            if (attempt.AttemptNumber > 1)
+            {
+                DiagnosticLogger.Log($"[Feature {FeatureId}] Retrying battery query after {attempt.Delay.TotalMilliseconds}ms (attempt {attempt.AttemptNumber}/{backoff.MaxAttempts})");
+                await Task.Delay(attempt.Delay);
+            }
+
+            response = await device.Parent.WriteRead20(
+                device.Parent.DevShort,
+                command,
+                timeout: (int)attempt.Timeout.TotalMilliseconds);
+
+            // Success - got valid response
+            if (response?.Length > 0)
+            {
+                break;
+            }
+        }
+
+        // Check if request timed out or failed after all retries
+        if (response?.Length == 0 || response == null)
+        {
+            DiagnosticLogger.LogWarning($"[Feature {FeatureId}] Battery query failed after {backoff.MaxAttempts} attempts");
             return null;
         }
 
@@ -41,8 +60,8 @@ public class BatteryUnified : IBatteryFeature
         // Param 0: Battery percentage (0-100)
         // Param 1: Battery level flags (validate before using)
         // Param 2: Charging status code
-        double percentage = response.GetParam(0);
-        byte levelFlags = response.GetParam(1);
+        double percentage = response.Value.GetParam(0);
+        byte levelFlags = response.Value.GetParam(1);
 
         if (!BatteryStatusParser.IsValidBatteryLevelFlags(levelFlags))
         {
@@ -50,7 +69,7 @@ public class BatteryUnified : IBatteryFeature
             return null;
         }
 
-        var status = BatteryStatusParser.ParseUnifiedBatteryStatus(response.GetParam(2));
+        var status = BatteryStatusParser.ParseUnifiedBatteryStatus(response.Value.GetParam(2));
         
         // Feature 0x1004 doesn't provide voltage info
         int millivolts = -1;

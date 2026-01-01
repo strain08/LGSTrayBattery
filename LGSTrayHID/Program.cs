@@ -11,6 +11,13 @@ namespace LGSTrayHID;
 internal static class GlobalSettings
 {
     public static NativeDeviceManagerSettings settings = new();
+
+    // Backoff strategies for retry operations
+    public static LGSTrayPrimitives.Retry.BackoffStrategy InitBackoff = BackoffProfile.DefaultInit.ToStrategy();
+    public static LGSTrayPrimitives.Retry.BackoffStrategy BatteryBackoff = BackoffProfile.DefaultBattery.ToStrategy();
+    public static LGSTrayPrimitives.Retry.BackoffStrategy MetadataBackoff = BackoffProfile.DefaultMetadata.ToStrategy();
+    public static LGSTrayPrimitives.Retry.BackoffStrategy FeatureEnumBackoff = BackoffProfile.DefaultFeatureEnum.ToStrategy();
+    public static LGSTrayPrimitives.Retry.BackoffStrategy PingBackoff = BackoffProfile.DefaultPing.ToStrategy();
 }
 
 internal class Program
@@ -40,6 +47,14 @@ internal class Program
 
         GlobalSettings.settings = builder.Configuration.GetSection("Native")
             .Get<NativeDeviceManagerSettings>() ?? GlobalSettings.settings;
+
+        // Load backoff settings
+        var backoffSettings = builder.Configuration.GetSection("Backoff").Get<BackoffSettings>() ?? new BackoffSettings();
+        GlobalSettings.InitBackoff = backoffSettings.Init.ToStrategy();
+        GlobalSettings.BatteryBackoff = backoffSettings.Battery.ToStrategy();
+        GlobalSettings.MetadataBackoff = backoffSettings.Metadata.ToStrategy();
+        GlobalSettings.FeatureEnumBackoff = backoffSettings.FeatureEnum.ToStrategy();
+        GlobalSettings.PingBackoff = backoffSettings.Ping.ToStrategy();
 
         builder.Services.AddLGSMessagePipe();
         builder.Services.AddHostedService<HidppManagerService>();

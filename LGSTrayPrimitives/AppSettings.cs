@@ -13,6 +13,8 @@ public class AppSettings
     public NotificationSettings Notifications { get; set; } = null!;
 
     public LoggingSettings Logging { get; set; } = null!;
+
+    public BackoffSettings Backoff { get; set; } = new();
 }
 
 public class UISettings
@@ -105,4 +107,104 @@ public class LoggingSettings
     /// Can be overridden by --verbose command-line flag.
     /// </summary>
     public bool Verbose { get; set; } = false;
+}
+
+public class BackoffSettings
+{
+    public BackoffProfile Init { get; set; } = BackoffProfile.DefaultInit;
+    public BackoffProfile Battery { get; set; } = BackoffProfile.DefaultBattery;
+    public BackoffProfile Metadata { get; set; } = BackoffProfile.DefaultMetadata;
+    public BackoffProfile FeatureEnum { get; set; } = BackoffProfile.DefaultFeatureEnum;
+    public BackoffProfile Ping { get; set; } = BackoffProfile.DefaultPing;
+}
+
+public class BackoffProfile
+{
+    public int InitialDelayMs { get; set; }
+    public int MaxDelayMs { get; set; }
+    public int InitialTimeoutMs { get; set; }
+    public int MaxTimeoutMs { get; set; }
+    public double Multiplier { get; set; } = 2.0;
+    public int MaxAttempts { get; set; }
+
+    /// <summary>
+    /// Converts this profile to a BackoffStrategy instance.
+    /// </summary>
+    public Retry.BackoffStrategy ToStrategy() => new(
+        initialDelay: TimeSpan.FromMilliseconds(InitialDelayMs),
+        maxDelay: TimeSpan.FromMilliseconds(MaxDelayMs),
+        initialTimeout: TimeSpan.FromMilliseconds(InitialTimeoutMs),
+        maxTimeout: TimeSpan.FromMilliseconds(MaxTimeoutMs),
+        multiplier: Multiplier,
+        maxAttempts: MaxAttempts);
+
+    /// <summary>
+    /// Default profile for device initialization.
+    /// Progressive backoff with 60s max delay cap.
+    /// </summary>
+    public static BackoffProfile DefaultInit => new()
+    {
+        InitialDelayMs = 2000,      // 2s
+        MaxDelayMs = 60000,         // 60s cap
+        InitialTimeoutMs = 1000,    // 1s
+        MaxTimeoutMs = 5000,        // 5s
+        Multiplier = 2.0,
+        MaxAttempts = 10
+    };
+
+    /// <summary>
+    /// Default profile for battery query operations.
+    /// Quick retry with lower delay cap.
+    /// </summary>
+    public static BackoffProfile DefaultBattery => new()
+    {
+        InitialDelayMs = 0,         // No delay on first retry
+        MaxDelayMs = 10000,         // 10s cap
+        InitialTimeoutMs = 1000,    // 1s
+        MaxTimeoutMs = 5000,        // 5s
+        Multiplier = 2.0,
+        MaxAttempts = 3             // Quick retry
+    };
+
+    /// <summary>
+    /// Default profile for metadata retrieval operations.
+    /// Moderate backoff for sleeping devices.
+    /// </summary>
+    public static BackoffProfile DefaultMetadata => new()
+    {
+        InitialDelayMs = 500,       // 500ms
+        MaxDelayMs = 30000,         // 30s cap
+        InitialTimeoutMs = 500,     // 500ms
+        MaxTimeoutMs = 3000,        // 3s
+        Multiplier = 2.0,
+        MaxAttempts = 5
+    };
+
+    /// <summary>
+    /// Default profile for feature enumeration.
+    /// Moderate retry for slow devices.
+    /// </summary>
+    public static BackoffProfile DefaultFeatureEnum => new()
+    {
+        InitialDelayMs = 1000,      // 1s
+        MaxDelayMs = 30000,         // 30s cap
+        InitialTimeoutMs = 1000,    // 1s
+        MaxTimeoutMs = 5000,        // 5s
+        Multiplier = 2.0,
+        MaxAttempts = 3
+    };
+
+    /// <summary>
+    /// Default profile for ping operations.
+    /// Fast retry with short timeouts.
+    /// </summary>
+    public static BackoffProfile DefaultPing => new()
+    {
+        InitialDelayMs = 100,       // 100ms
+        MaxDelayMs = 5000,          // 5s cap
+        InitialTimeoutMs = 100,     // 100ms
+        MaxTimeoutMs = 1000,        // 1s
+        Multiplier = 2.0,
+        MaxAttempts = 5
+    };
 }

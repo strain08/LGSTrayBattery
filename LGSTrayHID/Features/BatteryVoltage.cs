@@ -1,4 +1,5 @@
 using LGSTrayHID.Protocol;
+using LGSTrayPrimitives;
 
 namespace LGSTrayHID.Features;
 
@@ -46,24 +47,43 @@ public class BatteryVoltage : IBatteryFeature
             .WithFunction(BatteryFunction.GET_STATUS)
             .Build();
 
-        // Send command and wait for response
-        Hidpp20 response = await device.Parent.WriteRead20(
-            device.Parent.DevShort,
-            command,
-            AppConstants.BATT_VOLTAGE_QueryTimeout);
+        // Retry battery query with exponential backoff
+        var backoff = GlobalSettings.BatteryBackoff;
+        Hidpp20? response = null;
 
-        // Check if request timed out or failed
-        if (response.Length == 0)
+        await foreach (var attempt in backoff.GetAttemptsAsync(CancellationToken.None))
         {
+            if (attempt.AttemptNumber > 1)
+            {
+                DiagnosticLogger.Log($"[Feature {FeatureId}] Retrying battery query after {attempt.Delay.TotalMilliseconds}ms (attempt {attempt.AttemptNumber}/{backoff.MaxAttempts})");
+                await Task.Delay(attempt.Delay);
+            }
+
+            response = await device.Parent.WriteRead20(
+                device.Parent.DevShort,
+                command,
+                timeout: (int)attempt.Timeout.TotalMilliseconds);
+
+            // Success - got valid response
+            if (response?.Length > 0)
+            {
+                break;
+            }
+        }
+
+        // Check if request timed out or failed after all retries
+        if (response?.Length == 0 || response == null)
+        {
+            DiagnosticLogger.LogWarning($"[Feature {FeatureId}] Battery query failed after {backoff.MaxAttempts} attempts");
             return null;
         }
 
         // Parse response
         // Params 0-1: Battery voltage in millivolts (16-bit big-endian)
         // Param 2: Charging status flags
-        int millivolts = response.GetParam16(0);
+        int millivolts = response.Value.GetParam16(0);
         double percentage = EstimatePercentageFromVoltage(millivolts);
-        var status = BatteryStatusParser.ParseVoltageBatteryStatus(response.GetParam(2));
+        var status = BatteryStatusParser.ParseVoltageBatteryStatus(response.Value.GetParam(2));
 
         return new BatteryUpdateReturn(percentage, status, millivolts);
     }
