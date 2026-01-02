@@ -172,12 +172,6 @@ public sealed class HidppManagerContext
             // TEST HARNESS: Confirm cleanup completed
             DiagnosticLogger.Log($"Device removal complete - Path: {devPath}, Container: {containerId}");
         }
-        else
-        {
-            // TEST HARNESS: Log when device path not found in container map
-            DiagnosticLogger.LogWarning($"Device removal for unknown path: {devPath}");
-        }
-
         return 0;
     }
     public void SignalDeviceEvent(IPCMessageType messageType, IPCMessage message)
