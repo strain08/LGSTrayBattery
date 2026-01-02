@@ -6,9 +6,17 @@ namespace LGSTrayHID.Protocol;
 /// <summary>
 /// Handles sending HID++ commands and correlating responses.
 /// Eliminates duplication across WriteRead10, WriteRead20, and Ping20.
+/// <remarks>
+/// <br>Semaphore ensures only one thread can send a command and wait for a response at a time.</br>
+/// <br>1. Thread A sends command X, starts reading from _responseChannel waiting for response X</br>
+/// <br>2. Thread B sends command Y, starts reading from _responseChannel waiting for response Y</br>
+/// <br>3. Response Y arrives first</br>
+/// <br>4. Problem: Thread A might consume response Y from the channel(even though its matcher would reject it), causing Thread B to timeout</br>
+/// <br>5. Or worse: if matchers are loose, Thread A might incorrectly accept Thread B's response</br>/// 
+/// </remarks>
 /// </summary>
 public class CommandResponseCorrelator
-{
+{    
     private readonly SemaphoreSlim _semaphore;
     private readonly ChannelReader<byte[]> _responseChannel;
 

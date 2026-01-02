@@ -23,7 +23,7 @@ public class HidppReceiver : IDisposable
     private readonly HidMessageChannel _messageChannel;
     private readonly DeviceEnumerator _enumerator;
 
-    private readonly SemaphoreSlim _semaphore = new(1, 1);
+    private readonly SemaphoreSlim _correlationSemaphore = new(1, 1); // Ensure sequential command-response correlation
     private readonly SemaphoreSlim _initSemaphore = new(1, 1); // Ensure sequential device initialization
     private readonly Channel<byte[]> _channel = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(5)
     {
@@ -40,7 +40,7 @@ public class HidppReceiver : IDisposable
     public HidppReceiver(bool keepPollingWithEvents, int batteryEventDelaySeconds)
     {
         _lifecycleManager = new DeviceLifecycleManager(this, keepPollingWithEvents, batteryEventDelaySeconds);
-        _correlator = new CommandResponseCorrelator(_semaphore, _channel.Reader);
+        _correlator = new CommandResponseCorrelator(_correlationSemaphore, _channel.Reader);
         _announcementHandler = new DeviceAnnouncementHandler(_lifecycleManager, _initSemaphore);
         _messageRouter = new HidMessageRouter(_announcementHandler, _lifecycleManager, _channel.Writer);
         _messageChannel = new HidMessageChannel(_messageRouter);
@@ -361,7 +361,7 @@ public class HidppReceiver : IDisposable
                 _messageChannel.Dispose();
 
                 // Dispose synchronization primitives
-                _semaphore.Dispose();
+                _correlationSemaphore.Dispose();
                 _initSemaphore.Dispose();
 
                 // Note: _correlator doesn't own _semaphore or _channel, so we don't dispose it
