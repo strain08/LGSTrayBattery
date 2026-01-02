@@ -134,7 +134,7 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
         _reconnectionSubscription = _ws.ReconnectionHappened.Subscribe(info =>
         {
             DiagnosticLogger.Log("GHUB WebSocket reconnected, reloading devices");
-            if (info.Type != ReconnectionType.Initial) RediscoverDevices();
+            if (info.Type != ReconnectionType.Initial) _ = RediscoverDevices();
         });
 
         DiagnosticLogger.Log($"Attempting to connect to LGHUB at {url}");
@@ -597,7 +597,7 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
         }
     }
 
-    public async void RediscoverDevices()
+    public async Task RediscoverDevices()
     {
         // First, remove all GHUB devices to prevent duplicates
         _deviceEventBus.Publish(new RemoveMessage("*GHUB*", "rediscover_cleanup"));

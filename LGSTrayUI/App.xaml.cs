@@ -212,7 +212,7 @@ public partial class App : Application
             DiagnosticLogger.Log("Triggering rediscovery on all device managers");
             foreach (var manager in _deviceManagers)
             {
-                manager.RediscoverDevices();
+                _ = manager.RediscoverDevices();
                 DiagnosticLogger.Log($"Rediscovery triggered for {manager.GetType().Name}");
             }
         }

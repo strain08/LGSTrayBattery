@@ -10,7 +10,7 @@ namespace LGSTrayCore.Managers;
 public class LGSTrayHIDManager : IDeviceManager, IHostedService, IDisposable
 {
     #region IDisposable
-    private Func<Task>? _diposeSubs;
+    private Func<Task>? _disposeSubs;
     private bool disposedValue;
 
     protected virtual void Dispose(bool disposing)
@@ -19,8 +19,8 @@ public class LGSTrayHIDManager : IDeviceManager, IHostedService, IDisposable
         {
             if (disposing)
             {
-                _ = _diposeSubs?.Invoke();
-                _diposeSubs = null;
+                _ = _disposeSubs?.Invoke();
+                _disposeSubs = null;
             }
 
             // TODO: free unmanaged resources (unmanaged objects) and override finalizer
@@ -138,7 +138,7 @@ public class LGSTrayHIDManager : IDeviceManager, IHostedService, IDisposable
             cancellationToken
         );
 
-        _diposeSubs = async () =>
+        _disposeSubs = async () =>
         {
             await sub1.DisposeAsync();
             await sub2.DisposeAsync();
@@ -181,7 +181,7 @@ public class LGSTrayHIDManager : IDeviceManager, IHostedService, IDisposable
         return Task.CompletedTask;
     }
 
-    public async void RediscoverDevices()
+    public async Task RediscoverDevices()
     {
         // First, remove all Native HID devices to prevent stale state
         _deviceEventBus.Publish(new RemoveMessage("*NATIVE*", "rediscover_cleanup"));

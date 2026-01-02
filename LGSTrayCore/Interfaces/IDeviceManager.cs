@@ -2,5 +2,5 @@
 
 public interface IDeviceManager
 {
-    public void RediscoverDevices();
+    public Task RediscoverDevices();
 }

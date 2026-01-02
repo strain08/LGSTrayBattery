@@ -57,7 +57,7 @@ public partial class NotifyIconViewModel : ObservableObject, IHostedService
         {
             if (_autoStart == null)
             {
-                RegistryKey? registryKey = Registry.CurrentUser.OpenSubKey(AutoStartRegKey, true);
+                using RegistryKey? registryKey = Registry.CurrentUser.OpenSubKey(AutoStartRegKey, true);
                 _autoStart = registryKey?.GetValue(AutoStartRegKeyValue) != null;
             }
 
@@ -65,7 +65,7 @@ public partial class NotifyIconViewModel : ObservableObject, IHostedService
         }
         set
         {
-            RegistryKey? registryKey = Registry.CurrentUser.OpenSubKey(AutoStartRegKey, true);
+            using RegistryKey? registryKey = Registry.CurrentUser.OpenSubKey(AutoStartRegKey, true);
 
             if (registryKey == null)
             {
@@ -141,7 +141,7 @@ public partial class NotifyIconViewModel : ObservableObject, IHostedService
 
         foreach (var manager in _deviceManagers)
         {
-            manager.RediscoverDevices();
+            _ = manager.RediscoverDevices();
         }
 
         await Task.Delay(10_000);
