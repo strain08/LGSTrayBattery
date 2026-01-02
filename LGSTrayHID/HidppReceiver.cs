@@ -15,7 +15,7 @@ public class HidppReceiver : IDisposable
     public HidDevicePtr DevLong { get; private set; } = IntPtr.Zero;
     public IReadOnlyDictionary<ushort, HidppDevice> DeviceCollection => _lifecycleManager.Devices;
 
-    private byte PING_PAYLOAD = 0x55;
+    private int _pingPayloadCounter = 0x55;
 
     private readonly DeviceLifecycleManager _lifecycleManager;
     private readonly DeviceAnnouncementHandler _announcementHandler;
@@ -224,7 +224,8 @@ public class HidppReceiver : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposeCount > 0, this);
 
-        byte pingPayload = ++PING_PAYLOAD;
+        // Thread-safe increment with wrap-around to byte range
+        byte pingPayload = (byte)Interlocked.Increment(ref _pingPayloadCounter);
         Hidpp20 command = Hidpp20Commands.Ping(deviceId, pingPayload);
 
         Hidpp20 ret = await _correlator.SendHidpp20AndWaitAsync(
