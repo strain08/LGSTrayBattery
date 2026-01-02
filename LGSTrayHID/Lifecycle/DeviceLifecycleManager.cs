@@ -162,6 +162,20 @@ public class DeviceLifecycleManager
         }
     }
 
+    public string GetDeviceName(byte deviceIdx)
+    {
+        lock (_devices)
+        {
+            if (_devices.TryGetValue(deviceIdx, out var device))
+            {
+                return device.DeviceName ?? $"HID++ Device {deviceIdx}";
+            }
+            else
+            {
+                return $"HID++ Device {deviceIdx}";
+            }
+        }
+    }
     /// <summary>
     /// Disposes all devices in the collection and clears the collection.
     /// Called during HidppReceiver disposal to ensure proper cleanup.

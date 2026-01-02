@@ -155,8 +155,8 @@ public class HidppReceiver : IDisposable
         await foreach (var attempt in backoffStrategy.GetAttemptsAsync(cancellationToken))
         {
             if (attempt.AttemptNumber > 1)
-            {
-                DiagnosticLogger.Log($"//{backoffStrategy.ProfileName}// retry attempt {attempt.AttemptNumber} " +                                     
+            {                
+                DiagnosticLogger.Log($"[{_lifecycleManager.GetDeviceName(buffer.GetDeviceIdx())}] //{backoffStrategy.ProfileName}// retry attempt {attempt.AttemptNumber} " +                                     
                                      $"with timeout {attempt.Timeout.TotalMilliseconds} " +
                                      $"after delay {attempt.Delay.TotalMilliseconds} ms");
                 await Task.Delay(attempt.Delay, cancellationToken);
