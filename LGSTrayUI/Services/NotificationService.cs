@@ -1,16 +1,12 @@
 ﻿using CommunityToolkit.Mvvm.Messaging;
-using LGSTrayCore.Interfaces;
 using LGSTrayPrimitives;
-using LGSTrayPrimitives.MessageStructs;
 using LGSTrayUI.Messages;
-using MessagePipe;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Notification.Wpf;
 using Notification.Wpf.Constants;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
