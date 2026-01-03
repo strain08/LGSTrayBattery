@@ -77,10 +77,7 @@ public class DeviceLifecycleManager
     /// <param name="deviceIdx">Device index to look up</param>
     /// <param name="device">The found device, or null if not found</param>
     /// <returns>True if device was found, false otherwise</returns>
-    public bool TryGetDevice(byte deviceIdx, out HidppDevice? device)
-    {
-        return _devices.TryGetValue(deviceIdx, out device);
-    }
+    public bool TryGetDevice(byte deviceIdx, out HidppDevice? device) => _devices.TryGetValue(deviceIdx, out device);
 
     /// <summary>
     /// Check if a device initialization should proceed.

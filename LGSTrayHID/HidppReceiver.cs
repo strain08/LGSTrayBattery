@@ -69,15 +69,70 @@ public class HidppReceiver : IDisposable
         await _messageChannel.WaitUntilReadyAsync();
         DiagnosticLogger.Log("HID read threads ready");
 
-        // Note: DJ protocol (0x20/0x21) does not work with BOLT receivers.
-        // BOLT uses HID++ 2.0 Feature 0x1D4B (Wireless Device Status) for connection events.
-        // Events are automatically enabled by the battery enable command (HID++ 1.0 register 0x00).
+        // Detect device type (receiver vs direct device)
+        bool isReceiver = await TryDetectReceiverAsync();
 
-        // Enable receiver notifications for device on/off events
-        await EnableReceiverNotificationsAsync();
+        if (isReceiver)
+        {
+            DiagnosticLogger.Log("Initializing as RECEIVER device");
 
-        // Enumerate devices (query + announce, fallback ping)
-        await _enumerator.EnumerateDevicesAsync();
+            // Note: DJ protocol (0x20/0x21) does not work with BOLT receivers.
+            // BOLT uses HID++ 2.0 Feature 0x1D4B (Wireless Device Status) for connection events.
+            // Events are automatically enabled by the battery enable command (HID++ 1.0 register 0x00).
+
+            // Enable receiver notifications for device on/off events
+            await EnableReceiverNotificationsAsync();
+
+            // Enumerate devices (query + announce, fallback ping)
+            await _enumerator.EnumerateDevicesAsync();
+        }
+        else
+        {
+            DiagnosticLogger.Log("Initializing as DIRECT device");
+
+            // Initialize single device at index 0xFF
+            await InitializeDirectDeviceAsync();
+        }
+    }
+
+    /// <summary>
+    /// Detects whether this HID device is a receiver or a direct device.
+    /// Sends QueryDeviceCount command - receivers respond, direct devices timeout.
+    /// </summary>
+    /// <returns>True if receiver detected, false if direct device</returns>
+    private async Task<bool> TryDetectReceiverAsync()
+    {
+        try
+        {
+            DiagnosticLogger.Log("Detecting device type (receiver vs direct device)...");
+
+            // Query receiver for device count with short timeout
+            // Direct devices won't respond to this HID++ 1.0 receiver command
+            byte[] response = await WriteRead10(
+                DevShort,
+                Hidpp10Commands.QueryDeviceCount(),
+                timeout: 500  // Short timeout for fast detection
+            );
+
+            // Check if we got a valid response
+            if (response.Length >= 6 &&
+                response[2] == ReceiverCommand.QUERY_DEVICE_COUNT &&
+                response[3] == ReceiverCommand.SUB_COMMAND)
+            {
+                byte deviceCount = response[5];
+                DiagnosticLogger.Log($"Receiver detected - reports {deviceCount} connected devices");
+                return true; // RECEIVER MODE
+            }
+
+            // Empty response or invalid format - likely direct device
+            DiagnosticLogger.Log("No valid receiver response - treating as direct device");
+            return false; // DIRECT DEVICE MODE
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogger.Log($"Receiver detection failed: {ex.Message} - treating as direct device");
+            return false; // DIRECT DEVICE MODE (safe default)
+        }
     }
 
     /// <summary>
@@ -341,6 +396,38 @@ public class HidppReceiver : IDisposable
             // Non-fatal - continue with standard initialization
         }
     }
+
+    /// <summary>
+    /// Initializes a direct HID++ device (not connected through a receiver).
+    /// Direct devices use device index 0xFF (receiver broadcast address).
+    /// Examples: G515 keyboard in wired mode, G PRO X SUPERLIGHT wired.
+    /// </summary>
+    private async Task InitializeDirectDeviceAsync()
+    {
+        const byte DIRECT_DEVICE_INDEX = 0xFF;
+
+        try
+        {
+            DiagnosticLogger.Log("Starting direct device initialization at index 0xFF");
+
+            // Create device at index 0xFF (direct device uses receiver address)
+            var device = _lifecycleManager.CreateDevice(DIRECT_DEVICE_INDEX);
+
+            // Initialize device (ping test, feature enumeration, battery setup)
+            // This reuses the exact same initialization path as receiver devices
+            await device.InitAsync();
+
+            DiagnosticLogger.Log($"Direct device initialization complete - {device.Identifier} ({device.DeviceName})");
+        }
+        catch (Exception ex)
+        {
+            var stackFirstLine = ex.StackTrace?.Split('\n')[0].Trim() ?? "No stack trace";
+            DiagnosticLogger.LogError($"Direct device initialization failed: " +
+                                     $"{ex.GetType().Name} - {ex.Message} | {stackFirstLine}");
+            // Non-fatal - device may not be HID++ compatible or may be in sleep mode
+        }
+    }
+
     public void Dispose()
     {
         Dispose(disposing: true);

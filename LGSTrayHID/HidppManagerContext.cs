@@ -17,6 +17,13 @@ public sealed class HidppManagerContext
     private readonly Dictionary<Guid, HidppReceiver> _deviceMap = [];
     private readonly BlockingCollection<HidDeviceInfo> _deviceQueue = [];
 
+    // Mode-switch detection: Track recent USB device arrivals
+    private readonly object _arrivalLock = new();
+    private readonly List<UsbArrivalRecord> _recentArrivals = [];
+    private static readonly TimeSpan ArrivalTrackingWindow = TimeSpan.FromSeconds(5);
+
+    private record UsbArrivalRecord(DateTimeOffset Timestamp, ushort ProductId, Guid ContainerId, string DevicePath);
+
     public delegate void HidppDeviceEventHandler(IPCMessageType messageType, IPCMessage message);
 
     public event HidppDeviceEventHandler? HidppDeviceEvent;
@@ -86,6 +93,9 @@ public sealed class HidppManagerContext
         DiagnosticLogger.Log($"Usage: {deviceInfo.Usage:X04}");
         DiagnosticLogger.Log($"Page : {deviceInfo.UsagePage:X04}");
         DiagnosticLogger.Log("");
+
+        // Track USB arrival for mode-switch detection
+        TrackUsbArrival(deviceInfo.ProductId, containerId, devPath);
 
         if (!_deviceMap.TryGetValue(containerId, out HidppReceiver? hidppReceiver))
         {
@@ -177,6 +187,57 @@ public sealed class HidppManagerContext
     public void SignalDeviceEvent(IPCMessageType messageType, IPCMessage message)
     {
         HidppDeviceEvent?.Invoke(messageType, message);
+    }
+
+    /// <summary>
+    /// Track USB device arrival for mode-switch detection.
+    /// Called when a new USB device is detected.
+    /// </summary>
+    private void TrackUsbArrival(ushort productId, Guid containerId, string devicePath)
+    {
+        lock (_arrivalLock)
+        {
+            var now = DateTimeOffset.Now;
+
+            // Clean up old entries outside tracking window
+            _recentArrivals.RemoveAll(r => now - r.Timestamp > ArrivalTrackingWindow);
+
+            // Add new arrival
+            _recentArrivals.Add(new UsbArrivalRecord(now, productId, containerId, devicePath));
+
+            DiagnosticLogger.Log($"[Mode-Switch] Tracked USB arrival - PID: 0x{productId:X04}, Container: {containerId}");
+        }
+    }
+
+    /// <summary>
+    /// Check if a new USB device appeared recently (within 5 seconds).
+    /// This indicates a potential mode switch from wireless to wired.
+    /// </summary>
+    /// <returns>True if a new device appeared recently and might indicate wired mode</returns>
+    public bool CheckForRecentUsbArrival(out ushort newProductId)
+    {
+        lock (_arrivalLock)
+        {
+            var now = DateTimeOffset.Now;
+
+            // Look for arrivals in the last 5 seconds
+            var recentArrival = _recentArrivals
+                .Where(r => now - r.Timestamp <= ArrivalTrackingWindow)
+                .OrderByDescending(r => r.Timestamp)
+                .FirstOrDefault();
+
+            if (recentArrival != null)
+            {
+                newProductId = recentArrival.ProductId;
+                DiagnosticLogger.Log($"[Mode-Switch] Recent USB arrival detected - " +
+                    $"PID: 0x{newProductId:X04}, " +
+                    $"Age: {(now - recentArrival.Timestamp).TotalSeconds:F1}s");
+                return true;
+            }
+
+            newProductId = 0;
+            return false;
+        }
     }
 
 }

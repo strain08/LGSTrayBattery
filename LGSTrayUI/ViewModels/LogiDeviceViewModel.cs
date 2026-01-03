@@ -121,6 +121,7 @@ public partial class LogiDeviceViewModel : LogiDevice, IDisposable
         BatteryVoltage = updateMessage.batteryMVolt / 1000.0;
         BatteryMileage = updateMessage.Mileage;
         LastUpdate = updateMessage.updateTime;
+        IsWiredMode = updateMessage.IsWiredMode;
     }
 
     /// <summary>
