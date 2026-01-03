@@ -1,4 +1,5 @@
 using LGSTrayHID.Protocol;
+using LGSTrayPrimitives;
 
 namespace LGSTrayHID.Features;
 
@@ -46,13 +47,13 @@ public class BatteryVoltage : IBatteryFeature
             .WithFunction(BatteryFunction.GET_STATUS)
             .Build();
 
-        // Send command and wait for response
+        // Send command with retry logic (backoff strategy handles retries)
         Hidpp20 response = await device.Parent.WriteRead20(
             device.Parent.DevShort,
             command,
-            AppConstants.BATT_VOLTAGE_QueryTimeout);
+            backoffStrategy: GlobalSettings.BatteryBackoff);
 
-        // Check if request timed out or failed
+        // Check if request timed out or failed after all retries
         if (response.Length == 0)
         {
             return null;

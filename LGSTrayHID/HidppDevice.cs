@@ -20,6 +20,7 @@ public class HidppDevice : IDisposable
 
     private IBatteryFeature? _batteryFeature;
     private DateTimeOffset lastUpdate = DateTimeOffset.MinValue;
+    private int _consecutivePollFailures = 0;
 
     // Battery event tracking
     private byte _batteryFeatureIndex = 0xFF; // 0xFF = not set
@@ -42,6 +43,10 @@ public class HidppDevice : IDisposable
     private readonly CancellationTokenSource _poolingCts = new();
     public void CancelPooling() => _poolingCts.Cancel();
 
+    // Track device online/offline state (independent of polling state)
+    private bool _isOnline = false;
+    public bool IsOnline => _isOnline;
+    public void SetOffline() => _isOnline = false;
 
     private int _disposeCount = 0;
     public bool Disposed => _disposeCount > 0;
@@ -62,73 +67,52 @@ public class HidppDevice : IDisposable
             Hidpp20 ret;
 
             // Sync Ping with retry logic for sleeping devices
-            const int maxRetries = 10;
-            const int initialDelay = 2000; // 2 seconds
-            bool pingSuccess = false;
+            // Requires 3 consecutive successful pings with exponential backoff
+            DiagnosticLogger.Log($"Starting ping test for HID device index {DeviceIdx}");
 
-            for (int retry = 0; retry < maxRetries && !pingSuccess; retry++)
+            bool pingSuccess = await Parent.PingUntilConsecutiveSuccess(
+                deviceId: DeviceIdx,
+                successThreshold: 3,
+                maxPingsPerAttempt: 10,
+                backoffStrategy: GlobalSettings.InitBackoff,
+                cancellationToken: _cancellationSource.Token);
+
+            if (!pingSuccess)
             {
-                // Add delay before retry attempts (not on first attempt)
-                if (retry > 0)
-                {
-                    int delay = initialDelay * (int)Math.Pow(2, retry - 1);
-                    DiagnosticLogger.Log($"Retrying HID device index {DeviceIdx} after {delay}ms delay (attempt {retry + 1}/{maxRetries})");
-                    await Task.Delay(delay);
-                }
-
-                // Ping test
-                int successCount = 0;
-                int successThresh = 3;
-                DiagnosticLogger.Log($"Starting ping test for HID device index {DeviceIdx}");
-                for (int i = 0; i < 10; i++)
-                {
-                    var ping = await Parent.Ping20(DeviceIdx, AppConstants.INIT_PING_TIMEOUT_MS);
-                    if (ping)
-                    {
-                        successCount++;
-                    }
-                    else
-                    {
-                        successCount = 0;
-                    }
-
-                    if (successCount >= successThresh)
-                    {
-                        pingSuccess = true;
-                        break;
-                    }
-                }
-
-                // Log result if this is the last attempt and still failing
-                if (!pingSuccess && retry == maxRetries - 1)
-                {
-                    DiagnosticLogger.LogWarning($"HID device index {DeviceIdx} failed ping test after {maxRetries} retries ({successCount}/{successThresh} successes)");
-                    return;
-                }
+                DiagnosticLogger.LogWarning($"HID device index {DeviceIdx} failed ping test after {GlobalSettings.InitBackoff.MaxAttempts} attempts");
+                return;
             }
 
             DiagnosticLogger.Log($"HID device index {DeviceIdx} passed ping test");
 
             // Find IFeatureSet (0x0001) - get its feature index
             ret = await Parent.WriteRead20(Parent.DevShort,
-                Hidpp20Commands.GetFeatureIndex(DeviceIdx, HidppFeature.FEATURE_SET));
+                                           Hidpp20Commands.GetFeatureIndex(DeviceIdx, HidppFeature.FEATURE_SET),                                           
+                                           backoffStrategy: GlobalSettings.FeatureEnumBackoff);
             FeatureMap[HidppFeature.FEATURE_SET] = ret.GetParam(0);
 
             // Get Feature Count
             ret = await Parent.WriteRead20(Parent.DevShort,
-                Hidpp20Commands.GetFeatureCount(DeviceIdx, FeatureMap[HidppFeature.FEATURE_SET]));
+                                           Hidpp20Commands.GetFeatureCount(DeviceIdx, FeatureMap[HidppFeature.FEATURE_SET]),
+                                           backoffStrategy: GlobalSettings.FeatureEnumBackoff,
+                                           cancellationToken: _cancellationSource.Token);
             int featureCount = ret.GetParam(0);
 
-            // Enumerate Features
+            // Enumerate Features with retry logic
             for (byte i = 0; i <= featureCount; i++)
             {
+                // Query feature with retry (backoff strategy handles retries)
                 ret = await Parent.WriteRead20(Parent.DevShort,
-                    Hidpp20Commands.EnumerateFeature(DeviceIdx, FeatureMap[HidppFeature.FEATURE_SET], i), AppConstants.WRITE_READ_TIMEOUT_MS);
+                                               Hidpp20Commands.EnumerateFeature(DeviceIdx, FeatureMap[HidppFeature.FEATURE_SET], i),
+                                               backoffStrategy: GlobalSettings.FeatureEnumBackoff,
+                                               cancellationToken: _cancellationSource.Token);
 
-                // Check if we got a valid response (timeout returns empty array)
+                // Check if we got a valid response after all retries
                 if (ret.Length == 0)
                 {
-                    DiagnosticLogger.LogWarning($"[Device {DeviceIdx}] Feature enumeration timeout at index {i}, stopping enumeration");
+                    DiagnosticLogger.LogWarning($"[Device {DeviceIdx}] Feature enumeration timeout at index {i} " +
+                                                $"after {GlobalSettings.FeatureEnumBackoff.MaxAttempts} attempts, " +
+                                                $"stopping enumeration");
                     break;
                 }
 
@@ -188,7 +172,7 @@ public class HidppDevice : IDisposable
             else
             {
                 DiagnosticLogger.Log($"[{DeviceName}] Serial Number not supported by device firmware");
-                DiagnosticLogger.Log($"[{DeviceName}] Unit id: {fwInfo.UnitId} Model id: {fwInfo.ModelId}");
+                DiagnosticLogger.Log($"[{DeviceName}] UnitId: {fwInfo.UnitId} ModelId: {fwInfo.ModelId}");
             }
 
 
@@ -216,12 +200,19 @@ public class HidppDevice : IDisposable
             try
             {
                 var enableCmd = Hidpp10Commands.EnableBatteryReports(DeviceIdx);
-                await Parent.WriteRead10(Parent.DevShort, enableCmd, timeout: 1000);
-                DiagnosticLogger.Log($"[{DeviceName}] Battery events enabled");
+                var ret = await Parent.WriteRead10(Parent.DevShort, enableCmd, timeout: 1000);
+                if (ret.Length == 0)
+                {
+                    DiagnosticLogger.Log($"[{DeviceName}] EnableBatteryReports not supported (modern device - events enabled by default)");
+                }
+                else
+                {
+                    DiagnosticLogger.Log($"[{DeviceName}] Battery events enabled via HID++ 1.0 command");
+                }
             }
             catch (Exception ex)
             {
-                DiagnosticLogger.LogWarning($"[{DeviceName}] Failed to enable battery events (device may not support): {ex.Message}");
+                DiagnosticLogger.LogWarning($"[{DeviceName}] Exception enabling battery events: {ex.Message}");
                 // Non-fatal - device will fall back to polling
             }
         }
@@ -241,6 +232,9 @@ public class HidppDevice : IDisposable
 
         DiagnosticLogger.Log($"HID device registered - {Identifier} ({DeviceName}) [Signature: {deviceSignature}]");
 
+        // Mark device as online after successful initialization
+        _isOnline = true;
+
         // Force next battery update to bypass deduplication
         // This ensures fresh timestamp even if battery % unchanged after reconnect
         _forceNextUpdate = true;
@@ -248,14 +242,15 @@ public class HidppDevice : IDisposable
         
         if (_batteryFeature == null)
         {
-            await Task.Delay(1000);
+            await Task.Delay(1000, _cancellationSource.Token);
             return;
         }        
 
         await UpdateBattery();
 
         // Start battery polling loop with cancellation support
-        _pollingTask = Task.Run(() => PollBattery(_cancellationSource.Token, _poolingCts.Token), _cancellationSource.Token);
+        // Pass pooling token as parameter to avoid disposal race
+        _pollingTask = Task.Run(() => PollBattery(_poolingCts.Token), _cancellationSource.Token);
 
     }
 
@@ -273,44 +268,71 @@ public class HidppDevice : IDisposable
     }
 
     /// <summary>
-    /// Poll the battery status at regular intervals defined in settings RetryTime
+    /// Poll the battery status at regular intervals defined in settings
     /// </summary>
-    /// <param name="lifeCycle"></param>
-    /// <param name="pooling"></param>
-    /// <returns></returns>
-    private async Task PollBattery(CancellationToken lifeCycle, CancellationToken pooling)
+    /// <param name="poolingToken">Cancellation token for stopping polling operations</param>
+    private async Task PollBattery(CancellationToken poolingToken)
     {
-        DiagnosticLogger.Log($"[{DeviceName}] Pooling started.");
-        while (!lifeCycle.IsCancellationRequested && !pooling.IsCancellationRequested)
-        {
-            var now = DateTimeOffset.Now;
-#if DEBUG
-            var expectedUpdateTime = lastUpdate.AddSeconds(10);
-#else
-            // clamp poll period between 20 seconds and 1 hour
-            var expectedUpdateTime = lastUpdate.AddSeconds(Math.Clamp(GlobalSettings.settings.PollPeriod, 20, 3600));
-#endif
-            if (now < expectedUpdateTime)
-            {
-                var delay = expectedUpdateTime - now;
-                DiagnosticLogger.Log($"[{DeviceName}]Polling battery in {Math.Round(delay.TotalSeconds)}s...");
-                await Task.Delay((int)delay.TotalMilliseconds);
-            }
-            try
-            {
-                pooling.ThrowIfCancellationRequested();
-                await UpdateBattery();
-            }
-            catch
-            {
-                break;
-            }
-            // Hardcoded 10 second minimum delay between polls to prevent tight loop in case of immediate failures
-            // TODO: implement retry on failure
-            await Task.Delay(10_000);
+        // Token is captured at Task.Run() call time, preventing disposal race
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_cancellationSource.Token, poolingToken);
+        var linkedToken = linkedCts.Token;
 
+        var pollInterval = GetPollInterval();
+        DiagnosticLogger.Log($"[{DeviceName}] Polling started (interval: {pollInterval}s).");
+
+        try
+        {
+            while (!linkedToken.IsCancellationRequested)
+            {
+                var now = DateTimeOffset.Now;
+                var nextPollTime = lastUpdate.AddSeconds(pollInterval);
+                var delayMs = Math.Max(0, (int)(nextPollTime - now).TotalMilliseconds);
+
+                if (delayMs > 0)
+                {
+                    await Task.Delay(delayMs, linkedToken);
+                }
+
+                bool updateSucceeded = false;
+                try
+                {
+                    await UpdateBattery();
+                    updateSucceeded = true;
+                    _consecutivePollFailures = 0; // Reset on success
+                }
+                catch (Exception ex)
+                {
+                    DiagnosticLogger.LogWarning($"[{DeviceName}] Battery update failed: {ex.Message}");
+                    // Continue polling - will retry on next iteration
+                }
+
+                // CRITICAL: Prevent tight loop on repeated failures
+                // Use progressive backoff based on consecutive failures
+                if (!updateSucceeded)
+                {
+                    _consecutivePollFailures++;
+                    var retryDelay = GlobalSettings.BatteryBackoff.GetDelay(_consecutivePollFailures);
+                    DiagnosticLogger.Log($"[{DeviceName}] Adding {retryDelay.TotalSeconds}s retry delay after failure " +
+                                         $"(consecutive failures: {_consecutivePollFailures})");
+                    await Task.Delay(retryDelay, linkedToken);
+                }
+            }
         }
-        DiagnosticLogger.Log($"Pooling stopped for {DeviceName}.");
+        catch (OperationCanceledException)
+        {
+            DiagnosticLogger.Log($"[{DeviceName}] Polling cancelled");
+        }
+
+        DiagnosticLogger.Log($"[{DeviceName}] Polling stopped.");
+    }
+
+    private int GetPollInterval()
+    {
+#if DEBUG
+        return 10;
+#else
+        return Math.Clamp(GlobalSettings.settings.PollPeriod, 20, 3600);
+#endif
     }
 
     public async Task UpdateBattery(bool forceIpcUpdate = false)
@@ -381,18 +403,18 @@ public class HidppDevice : IDisposable
             return false;
         }
 
-        // TODO: Consider validating the batteryUpdate value here using similar logic to the polling update
-
         var batStatus = batteryUpdate.Value;
 
         // Exceptional battery event, skip publish (some devices send spurious events)
-        if (batStatus.batteryPercentage == 15)
-        {
-            DiagnosticLogger.Log($"[{DeviceName}] Exceptional battery event detected (Charging at 15%), skipping update publish");
-            DiagnosticLogger.Log($"[{DeviceName}] Exceptional battery event message: {message}");
-            return true;
+        // :: band-aid fix disabled for now as we improved IsBatteryEvent
 
-        }
+        //if (batStatus.batteryPercentage == 15)
+        //{
+        //    DiagnosticLogger.Log($"[{DeviceName}] Exceptional battery event detected (Charging at 15%), skipping update publish");
+        //    DiagnosticLogger.Log($"[{DeviceName}] Exceptional battery event message: {message}");
+        //    return true;
+
+        //}
 
         // Check if we're in the delay window after device ON (ignore EVENT data during this period)
         if (_batteryEventDelaySeconds > 0 && _deviceOnTime != DateTimeOffset.MinValue)
@@ -455,11 +477,15 @@ public class HidppDevice : IDisposable
                 {
                     try
                     {
-                        // Wait up to 5 seconds for task to exit gracefully
-                        bool completed = _pollingTask.Wait(TimeSpan.FromSeconds(5));
+                        // Wait up to 10 seconds for task to exit gracefully (increased for safer disposal)
+                        bool completed = _pollingTask.Wait(TimeSpan.FromSeconds(10));
                         if (!completed)
                         {
-                            DiagnosticLogger.LogWarning($"[{DeviceName}] Battery polling task did not exit within timeout");
+                            DiagnosticLogger.LogWarning($"[{DeviceName}] Battery polling task did not exit within 10s timeout");
+                        }
+                        else
+                        {
+                            DiagnosticLogger.Log($"[{DeviceName}] Battery polling task exited successfully");
                         }
                     }
                     catch (Exception ex)
@@ -470,6 +496,7 @@ public class HidppDevice : IDisposable
 
                 // Dispose managed resources
                 _cancellationSource.Dispose();
+                _poolingCts.Dispose();
                 _initSemaphore.Dispose();
             }
 

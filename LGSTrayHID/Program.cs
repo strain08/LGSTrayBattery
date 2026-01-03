@@ -1,5 +1,6 @@
 ﻿using LGSTrayPrimitives;
 using LGSTrayPrimitives.IPC;
+using LGSTrayPrimitives.Retry;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -11,6 +12,14 @@ namespace LGSTrayHID;
 internal static class GlobalSettings
 {
     public static NativeDeviceManagerSettings settings = new();
+
+    // Backoff strategies for retry operations
+    public static BackoffStrategy InitBackoff { get; set; } = BackoffProfile.DefaultInit.ToStrategy();
+    public static BackoffStrategy BatteryBackoff { get; set; } = BackoffProfile.DefaultBattery.ToStrategy();
+    public static BackoffStrategy MetadataBackoff { get; set; } = BackoffProfile.DefaultMetadata.ToStrategy();
+    public static BackoffStrategy FeatureEnumBackoff { get; set; } = BackoffProfile.DefaultFeatureEnum.ToStrategy();
+    public static BackoffStrategy PingBackoff { get; set; } = BackoffProfile.DefaultPing.ToStrategy();
+    public static BackoffStrategy ReceiverInitBackoff { get; set; } = BackoffProfile.DefaultReceiverInit.ToStrategy();
 }
 
 internal class Program
@@ -40,6 +49,15 @@ internal class Program
 
         GlobalSettings.settings = builder.Configuration.GetSection("Native")
             .Get<NativeDeviceManagerSettings>() ?? GlobalSettings.settings;
+
+        // Load backoff settings
+        var backoffSettings = builder.Configuration.GetSection("Backoff").Get<BackoffSettings>() ?? new BackoffSettings();
+        GlobalSettings.InitBackoff = backoffSettings.Init.ToStrategy();
+        GlobalSettings.BatteryBackoff = backoffSettings.Battery.ToStrategy();
+        GlobalSettings.MetadataBackoff = backoffSettings.Metadata.ToStrategy();
+        GlobalSettings.FeatureEnumBackoff = backoffSettings.FeatureEnum.ToStrategy();
+        GlobalSettings.PingBackoff = backoffSettings.Ping.ToStrategy();
+        GlobalSettings.ReceiverInitBackoff = backoffSettings.ReceiverInit.ToStrategy();
 
         builder.Services.AddLGSMessagePipe();
         builder.Services.AddHostedService<HidppManagerService>();

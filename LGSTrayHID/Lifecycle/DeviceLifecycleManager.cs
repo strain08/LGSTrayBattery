@@ -1,4 +1,5 @@
 using LGSTrayPrimitives;
+using LGSTrayHID.Protocol;
 
 namespace LGSTrayHID.Lifecycle;
 
@@ -18,6 +19,10 @@ public class DeviceLifecycleManager
     // Configuration settings
     private readonly bool _keepPollingWithEvents;
     private readonly int _batteryEventDelaySeconds;
+
+    // Enumeration completion tracking
+    private TaskCompletionSource<int>? _enumerationCompletion;
+    private int _expectedDeviceCount;
 
     public DeviceLifecycleManager(HidppReceiver parent, bool keepPollingWithEvents, int batteryEventDelaySeconds)
     {
@@ -40,7 +45,29 @@ public class DeviceLifecycleManager
     public HidppDevice CreateDevice(byte deviceIdx)
     {
         var device = new HidppDevice(_parent, deviceIdx, _keepPollingWithEvents, _batteryEventDelaySeconds);
-        _devices[deviceIdx] = device;
+
+        lock (_devices)
+        {
+            // Check if device already exists (replacement scenario)
+            bool isReplacement = _devices.ContainsKey(deviceIdx);
+            if (isReplacement)
+            {
+                DiagnosticLogger.Log($"[Device {deviceIdx}] Replacing existing device in collection");
+            }
+
+            _devices[deviceIdx] = device;
+
+            // Check if we've reached expected count during enumeration
+            if (_enumerationCompletion != null && Count >= _expectedDeviceCount)
+            {
+                DiagnosticLogger.Log($"[DeviceLifecycle] Enumeration complete - " +
+                                    $"Reached expected count {_expectedDeviceCount} " +
+                                    $"(triggered by device {deviceIdx} creation)");
+                _enumerationCompletion.TrySetResult(Count);
+                _enumerationCompletion = null;
+            }
+        }
+
         return device;
     }
 
@@ -86,10 +113,69 @@ public class DeviceLifecycleManager
     }
 
     /// <summary>
+    /// Checks if a device at the given index is already initialized and healthy.
+    /// A device is considered initialized if it has a valid identifier, is not disposed, and is online.
+    /// </summary>
+    /// <param name="deviceIdx">Device index to check</param>
+    /// <returns>True if device exists, is initialized, not disposed, and online</returns>
+    public bool IsDeviceInitialized(byte deviceIdx)
+    {
+        lock (_devices)
+        {
+            if (!_devices.TryGetValue(deviceIdx, out var device))
+                return false;
+
+            // Check if device is initialized (has identifier), not disposed, and online
+            // IsOnline=false indicates device went offline (OFF event) and needs reinitialization
+            // Note: Polling may be cancelled due to battery events (keepPollingWithEvents=false),
+            // but device is still online and doesn't need reinitialization
+            return !string.IsNullOrEmpty(device.Identifier)
+                && !device.Disposed
+                && device.IsOnline;
+        }
+    }
+
+    /// <summary>
     /// Gets the current number of devices in the collection.
     /// </summary>
     public int Count => _devices.Count;
 
+    /// <summary>
+    /// Sets the expected device count for enumeration and the completion source to signal.
+    /// Used for event-driven device enumeration synchronization.
+    /// </summary>
+    /// <param name="count">Expected number of devices to announce</param>
+    /// <param name="completion">TaskCompletionSource to signal when expected count is reached</param>
+    public void SetExpectedDeviceCount(int count, TaskCompletionSource<int> completion)
+    {
+        lock (_devices)
+        {
+            _expectedDeviceCount = count;
+            _enumerationCompletion = completion;
+
+            // Check if we've already reached the count (race condition edge case)
+            if (Count >= _expectedDeviceCount)
+            {
+                _enumerationCompletion.TrySetResult(Count);
+                _enumerationCompletion = null;
+            }
+        }
+    }
+
+    public string GetDeviceName(byte deviceIdx)
+    {
+        lock (_devices)
+        {
+            if (_devices.TryGetValue(deviceIdx, out var device))
+            {
+                return device.DeviceName ?? $"HID++ Device {deviceIdx}";
+            }
+            else
+            {
+                return $"HID++ Device {deviceIdx}";
+            }
+        }
+    }
     /// <summary>
     /// Disposes all devices in the collection and clears the collection.
     /// Called during HidppReceiver disposal to ensure proper cleanup.
@@ -98,6 +184,11 @@ public class DeviceLifecycleManager
     {
         lock (_devices)
         {
+            // Complete any pending enumeration with current count
+            _enumerationCompletion?.TrySetResult(Count);
+            _enumerationCompletion = null;
+            _expectedDeviceCount = 0;
+
             foreach (var device in _devices.Values)
             {
                 device.Dispose();

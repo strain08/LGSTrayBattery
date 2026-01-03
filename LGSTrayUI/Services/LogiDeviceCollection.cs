@@ -217,17 +217,8 @@ public class LogiDeviceCollection : ILogiDeviceCollection,
     {
         _dispatcher.BeginInvoke(() =>
         {
-            // Grace period check disabled , we handle 15% event in HidppDevice instead
-
-            // Check if in grace period after resume - ignore incorrect battery data
-            //if (IsInResumeGracePeriod())
-            //{
-            //    var timeSinceResume = (DateTimeOffset.Now - _lastResumeTime).TotalSeconds;
-            //    DiagnosticLogger.Log(
-            //        $"Battery update IGNORED (resume grace period +{timeSinceResume:F1}s): " +
-            //        $"{updateMessage.deviceId} = {updateMessage.batteryPercentage}%");
-            //    return;  // Discard the update
-            //}
+            // Note: Grace period check removed - battery event filtering now handled
+            // in HidppDevice.TryHandleBatteryEventAsync() with device-specific delay window
 
             var device = Devices.FirstOrDefault(dev => dev.DeviceId == updateMessage.deviceId);
             if (device == null)
@@ -364,6 +355,9 @@ public class LogiDeviceCollection : ILogiDeviceCollection,
         {
             device.IsChecked = false;
         }
+
+        // Dispose the ViewModel to clean up event subscriptions (prevents memory leak)
+        device.Dispose();
 
         // Note: With signature-based matching, we preserve settings for ALL disconnect reasons
         // Settings are only removed when user manually unchecks the device

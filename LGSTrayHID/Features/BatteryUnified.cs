@@ -1,4 +1,5 @@
 using LGSTrayHID.Protocol;
+using LGSTrayPrimitives;
 
 namespace LGSTrayHID.Features;
 
@@ -24,13 +25,13 @@ public class BatteryUnified : IBatteryFeature
             .WithFunction(BatteryFunction.GET_CAPABILITY)
             .Build();
 
-        // Send command and wait for response (with extended timeout)
+        // Send command with retry logic (backoff strategy handles retries)
         Hidpp20 response = await device.Parent.WriteRead20(
             device.Parent.DevShort,
             command,
-            timeout: AppConstants.UNIFIED_QueryTimeout);
+            backoffStrategy: GlobalSettings.BatteryBackoff);
 
-        // Check if request timed out or failed
+        // Check if request timed out or failed after all retries
         if (response.Length == 0)
         {
             return null;
@@ -38,10 +39,19 @@ public class BatteryUnified : IBatteryFeature
 
         // Parse response
         // Param 0: Battery percentage (0-100)
+        // Param 1: Battery level flags (validate before using)
         // Param 2: Charging status code
         double percentage = response.GetParam(0);
-        var status = BatteryStatusParser.ParseUnifiedBatteryStatus(response.GetParam(2));
+        byte levelFlags = response.GetParam(1);
 
+        if (!BatteryStatusParser.IsValidBatteryLevelFlags(levelFlags))
+        {
+            DiagnosticLogger.Log($"[Feature {FeatureId}] Invalid battery level flags: 0x{levelFlags:X2} (multiple or no flags set). Rejecting corrupt data.");
+            return null;
+        }
+
+        var status = BatteryStatusParser.ParseUnifiedBatteryStatus(response.GetParam(2));
+        
         // Feature 0x1004 doesn't provide voltage info
         int millivolts = -1;
 
@@ -61,8 +71,16 @@ public class BatteryUnified : IBatteryFeature
         // Note: 0x1004 events use function 0x00 (broadcast) vs 0x10 for queries
         // but payload format matches capability response
         // Param 0: Battery percentage (0-100)
+        // Param 1: Battery level flags (validate before using)
         // Param 2: Charging status code
         double percentage = eventMessage.GetParam(0);
+        byte levelFlags = eventMessage.GetParam(1);
+
+        if (!BatteryStatusParser.IsValidBatteryLevelFlags(levelFlags))
+        {
+            DiagnosticLogger.Log($"[Feature {FeatureId}] Invalid battery level flags in event: 0x{levelFlags:X2} (multiple or no flags set). Rejecting corrupt data.");
+            return null;
+        }
         var status = BatteryStatusParser.ParseUnifiedBatteryStatus(eventMessage.GetParam(2));
 
         // Feature 0x1004 doesn't provide voltage info

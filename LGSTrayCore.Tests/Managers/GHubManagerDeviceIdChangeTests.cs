@@ -141,7 +141,7 @@ public class GHubManagerDeviceIdChangeTests
         mockPublisher.PublishedMessages.Clear();
 
         // Act
-        manager.RediscoverDevices();
+        _ = manager.RediscoverDevices();
         await Task.Delay(200); // Wait for cleanup + reconnect
 
         // Assert

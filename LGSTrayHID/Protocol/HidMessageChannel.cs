@@ -15,9 +15,9 @@ public class HidMessageChannel : IDisposable
     private readonly HidMessageRouter _router;
     private readonly CancellationTokenSource _cancellationSource = new();
     private readonly List<Thread> _readerThreads = new();
-    private bool _isReading = true;
-    private const int READ_TIMEOUT = 100;
-    private const int THREAD_JOIN_TIMEOUT_MS = 5000; // 5 seconds
+    private readonly TaskCompletionSource<bool> _readySignal = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private const int DEVICE_READ_TIMEOUT_MS = 100;
+    private const int THREAD_EXIT_TIMEOUT_MS = 5000; // 5 seconds
 
     public HidMessageChannel(HidMessageRouter router)
     {
@@ -32,7 +32,12 @@ public class HidMessageChannel : IDisposable
     /// <param name="devLong">HID device handle for LONG (20-byte) messages</param>
     public void StartReading(HidDevicePtr devShort, HidDevicePtr devLong)
     {
-        Thread shortThread = new(async () => { await ReadThreadAsync(devShort, 7); })
+        Thread shortThread = new(async () =>
+        {
+            // Signal ready immediately when first thread starts
+            _readySignal.TrySetResult(true);
+            await ReadThreadAsync(devShort, 7);
+        })
         {
             Priority = ThreadPriority.BelowNormal,
             Name = "HID-SHORT-Reader"
@@ -50,25 +55,50 @@ public class HidMessageChannel : IDisposable
     }
 
     /// <summary>
-    /// Reads HID messages in a loop until _isReading is false.
+    /// Waits until HID read threads are ready to process messages.
+    /// Returns immediately if threads are already started.
+    /// </summary>
+    /// <returns>A task that completes when the read threads are ready</returns>
+    public Task WaitUntilReadyAsync() => _readySignal.Task;
+
+    /// <summary>
+    /// Reads HID messages in a loop until cancellation is requested.
     /// Handles timeout (0 = retry), error (<0 = stop), and success (>0 = process).
     /// </summary>
     private async Task ReadThreadAsync(HidDevicePtr device, int bufferSize)
     {
         byte[] buffer = new byte[bufferSize];
+        CancellationToken ct = _cancellationSource.Token;
 
-        while (_isReading)
+        while (!ct.IsCancellationRequested)
         {
-            var bytesRead = device.Read(buffer, bufferSize, READ_TIMEOUT);
+            var bytesRead = device.Read(buffer, bufferSize, DEVICE_READ_TIMEOUT_MS);
 
-            if (!_isReading) break;
+            // Check cancellation immediately after blocking read
+            if (ct.IsCancellationRequested) break;
 
-            if (bytesRead < 0) break;      // Error - stop thread
+            if (bytesRead < 0)
+            {
+                // HID read error - log and stop thread
+                DiagnosticLogger.LogError(
+                    $"HID read error on {bufferSize}b thread " +
+                    $"(return code: {bytesRead}). Thread exiting. " +
+                    $"Device may be disconnected or driver issue."
+                );
+                break;
+            }
+
             if (bytesRead == 0) continue;  // Timeout - retry
 
             LogRawMessage(buffer, bytesRead, bufferSize);
 
-            await _router.RouteMessageAsync(buffer);
+            // Create a copy of the message to prevent data corruption
+            // Channel data  may be overwritten before being read by the router !
+            // as the router await only wait for the write to complete, not the read.
+            byte[] messageCopy = new byte[bytesRead];
+            Array.Copy(buffer, messageCopy, bytesRead);
+
+            await _router.RouteMessageAsync(messageCopy);
         }
 
         HidClose(device);
@@ -81,24 +111,25 @@ public class HidMessageChannel : IDisposable
     /// </summary>
     private static void LogRawMessage(byte[] buffer, int bytesRead, int bufferSize)
     {
-        string hex = string.Join(" ", buffer.Take(Math.Min(7, bytesRead)).Select(b => $"{b:X02}"));
-        if (buffer[0] != 0x10 || buffer[2] != 0x00) // Skip common ping responses
+        // Skip common ping responses AND check if verbose enabled before allocating
+        if ((buffer[0] != 0x10 || buffer[2] != 0x00) && DiagnosticLogger.IsVerboseEnabled)
         {
+            // Only allocate string if we're actually going to log it
+            string hex = string.Join(" ", buffer.Take(Math.Min(7, bytesRead)).Select(b => $"{b:X02}"));
             DiagnosticLogger.Verbose($"DEBUG RAW [{bufferSize}b]: {hex}");
         }
     }
 
 
     /// <summary>
-    /// Stops the read threads by setting _isReading to false.
+    /// Stops the read threads by triggering cancellation.
     /// Waits for threads to exit gracefully before returning.
     /// </summary>
     public void Dispose()
     {
         DiagnosticLogger.Log("HidMessageChannel.Dispose starting");
 
-        // Signal threads to stop
-        _isReading = false;
+        // Signal threads to stop via cancellation token
         _cancellationSource.Cancel();
 
         // Wait for all threads to exit
@@ -106,10 +137,10 @@ public class HidMessageChannel : IDisposable
         {
             if (thread.IsAlive)
             {
-                bool joined = thread.Join(THREAD_JOIN_TIMEOUT_MS);
+                bool joined = thread.Join(THREAD_EXIT_TIMEOUT_MS);
                 if (!joined)
                 {
-                    DiagnosticLogger.LogWarning($"HidMessageChannel: Thread '{thread.Name}' did not exit within {THREAD_JOIN_TIMEOUT_MS}ms timeout");
+                    DiagnosticLogger.LogWarning($"HidMessageChannel: Thread '{thread.Name}' did not exit within {THREAD_EXIT_TIMEOUT_MS}ms timeout");
                 }
                 else
                 {

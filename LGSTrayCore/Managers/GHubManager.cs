@@ -53,12 +53,21 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
         {
             if (disposing)
             {
+                // Dispose WebSocket event subscriptions to prevent memory leaks
+                _messageSubscription?.Dispose();
+                _messageSubscription = null;
+
+                _disconnectionSubscription?.Dispose();
+                _disconnectionSubscription = null;
+
+                _reconnectionSubscription?.Dispose();
+                _reconnectionSubscription = null;
+
+                // Dispose WebSocket client
                 _ws?.Dispose();
                 _ws = null;
             }
 
-            // TODO: free unmanaged resources (unmanaged objects) and override finalizer
-            // TODO: set large fields to null
             disposedValue = true;
         }
     }
@@ -90,6 +99,11 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
 
     protected IWebSocketClient? _ws;
 
+    // WebSocket event subscriptions (must be disposed to prevent memory leaks)
+    private IDisposable? _messageSubscription;
+    private IDisposable? _disconnectionSubscription;
+    private IDisposable? _reconnectionSubscription;
+
     // Protocol change detection
     private int _protocolErrorCount = 0;
     private const int PROTOCOL_ERROR_THRESHOLD = 3;
@@ -106,20 +120,21 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
         var url = new Uri(WEBSOCKET_SERVER);
         _ws = _wsFactory.Create(url);
 
-        _ws.MessageReceived.Subscribe(ParseSocketMsg);
+        // Store subscriptions so they can be disposed later (prevents memory leaks)
+        _messageSubscription = _ws.MessageReceived.Subscribe(ParseSocketMsg);
 
         _ws.ErrorReconnectTimeout = TimeSpan.FromMilliseconds(RECONNECT_TIMEOUT);
         _ws.ReconnectTimeout = null;
-        _ws.DisconnectionHappened.Subscribe(info =>
+        _disconnectionSubscription = _ws.DisconnectionHappened.Subscribe(info =>
         {
             DiagnosticLogger.LogWarning($"GHUB WebSocket disconnected: {info.Type}");
             DiagnosticLogger.Log("Clearing all GHUB devices.");
             _deviceEventBus.Publish(new RemoveMessage("*GHUB*", "rediscover_cleanup"));
         });
-        _ws.ReconnectionHappened.Subscribe(info =>
+        _reconnectionSubscription = _ws.ReconnectionHappened.Subscribe(info =>
         {
             DiagnosticLogger.Log("GHUB WebSocket reconnected, reloading devices");
-            if (info.Type != ReconnectionType.Initial) RediscoverDevices();
+            if (info.Type != ReconnectionType.Initial) _ = RediscoverDevices();
         });
 
         DiagnosticLogger.Log($"Attempting to connect to LGHUB at {url}");
@@ -156,7 +171,18 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
+        // Dispose subscriptions before disposing WebSocket client
+        _messageSubscription?.Dispose();
+        _messageSubscription = null;
+
+        _disconnectionSubscription?.Dispose();
+        _disconnectionSubscription = null;
+
+        _reconnectionSubscription?.Dispose();
+        _reconnectionSubscription = null;
+
         _ws?.Dispose();
+        _ws = null;
 
         return Task.CompletedTask;
     }
@@ -571,7 +597,7 @@ public partial class GHubManager : IDeviceManager, IHostedService, IDisposable
         }
     }
 
-    public async void RediscoverDevices()
+    public async Task RediscoverDevices()
     {
         // First, remove all GHUB devices to prevent duplicates
         _deviceEventBus.Publish(new RemoveMessage("*GHUB*", "rediscover_cleanup"));
