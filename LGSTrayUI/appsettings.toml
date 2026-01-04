@@ -94,9 +94,9 @@ maxAttempts = 10           # Maximum retry attempts
 [Backoff.Battery]
 # Battery query retry settings
 # Quick retry with lower delay cap
-initialDelayMs = 2000      # 2s delay on first retry
+initialDelayMs = 0         # 0s delay on first retry
 maxDelayMs = 10_000        # 10s - maximum delay cap
-initialTimeoutMs = 1000    # 1s - timeout for first attempt
+initialTimeoutMs = 100     # 100ms - timeout for first attempt
 maxTimeoutMs = 5000        # 5s - maximum timeout cap
 multiplier = 2.0           # Exponential multiplier (doubling)
 maxAttempts = 3            # Quick retry (3 attempts total)

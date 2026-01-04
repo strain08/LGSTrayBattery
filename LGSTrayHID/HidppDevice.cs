@@ -350,12 +350,17 @@ public class HidppDevice : IDisposable
     private int GetPollInterval()
     {
 #if DEBUG
-        return 10;
+                return 10;
 #else
-        return Math.Clamp(GlobalSettings.settings.PollPeriod, 20, 3600);
+        // Wired mode devices use a fixed poll interval of 60 seconds
+        return _isWiredModeDevice ? 60 : Math.Clamp(GlobalSettings.settings.PollPeriod, 20, 3600);
 #endif
     }
-
+    /// <summary>
+    /// HID++ 2.0 Battery update logic
+    /// </summary>
+    /// <param name="forceIpcUpdate"></param>
+    /// <returns></returns>
     public async Task UpdateBattery(bool forceIpcUpdate = false)
     {
         if (_batteryFeature == null)
@@ -363,7 +368,21 @@ public class HidppDevice : IDisposable
             DiagnosticLogger.Log($"[{DeviceName}] No battery feature available, skipping battery update.");
             return;
         }
+        
+        // Ping device before battery read to ensure it's awake
+        var ping = await Parent.PingUntilConsecutiveSuccess(
+            deviceId: DeviceIdx,
+            successThreshold: 1,
+            maxPingsPerAttempt: 3,
+            backoffStrategy: GlobalSettings.PingBackoff,
+            cancellationToken: _cancellationSource.Token);
 
+        if (!ping)
+        {
+            DiagnosticLogger.LogWarning($"[{DeviceName}] Device unresponsive during battery update ping, skipping battery read.");
+            return;
+        }
+        
         var ret = await _batteryFeature.GetBatteryAsync(this);
 
         if (ret == null)
@@ -426,17 +445,6 @@ public class HidppDevice : IDisposable
 
         var batStatus = batteryUpdate.Value;
 
-        // Exceptional battery event, skip publish (some devices send spurious events)
-        // :: band-aid fix disabled for now as we improved IsBatteryEvent
-
-        //if (batStatus.batteryPercentage == 15)
-        //{
-        //    DiagnosticLogger.Log($"[{DeviceName}] Exceptional battery event detected (Charging at 15%), skipping update publish");
-        //    DiagnosticLogger.Log($"[{DeviceName}] Exceptional battery event message: {message}");
-        //    return true;
-
-        //}
-
         // Check if we're in the delay window after device ON (ignore EVENT data during this period)
         if (_batteryEventDelaySeconds > 0 && _deviceOnTime != DateTimeOffset.MinValue)
         {
@@ -475,7 +483,7 @@ public class HidppDevice : IDisposable
         return true; // Event handled successfully
     }
 
-
+    #region DISPOSE
     public void Dispose()
     {
         Dispose(disposing: true);
@@ -529,4 +537,5 @@ public class HidppDevice : IDisposable
     {
         Dispose(disposing: false);
     }
+    #endregion
 }
