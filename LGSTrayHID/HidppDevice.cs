@@ -316,9 +316,8 @@ public class HidppDevice : IDisposable
 
                 bool updateSucceeded = false;
                 try
-                {
-                    await UpdateBattery();
-                    updateSucceeded = true;
+                {                    
+                    updateSucceeded = await UpdateBattery();
                     _consecutivePollFailures = 0; // Reset on success
                 }
                 catch (Exception ex)
@@ -361,12 +360,12 @@ public class HidppDevice : IDisposable
     /// </summary>
     /// <param name="forceIpcUpdate"></param>
     /// <returns></returns>
-    public async Task UpdateBattery(bool forceIpcUpdate = false)
+    public async Task<bool> UpdateBattery(bool forceIpcUpdate = false)
     {
         if (_batteryFeature == null)
         {
             DiagnosticLogger.Log($"[{DeviceName}] No battery feature available, skipping battery update.");
-            return;
+            return false;
         }
         
         // Ping device before battery read to ensure it's awake
@@ -380,7 +379,7 @@ public class HidppDevice : IDisposable
         if (!ping)
         {
             DiagnosticLogger.LogWarning($"[{DeviceName}] Device unresponsive during battery update ping, skipping battery read.");
-            return;
+            return false;
         }
         
         var ret = await _batteryFeature.GetBatteryAsync(this);
@@ -388,7 +387,7 @@ public class HidppDevice : IDisposable
         if (ret == null)
         {
             DiagnosticLogger.Log($"[{DeviceName}] Battery update returned null, skipping.");
-            return;
+            return false;
         }
 
         var batStatus = ret.Value;
@@ -405,6 +404,7 @@ public class HidppDevice : IDisposable
 
         // Publish update (handles deduplication, IPC, logging)
         _batteryPublisher.PublishUpdate(Identifier, DeviceName, batStatus, now, "poll", shouldForce);
+        return true;
     }
 
     /// <summary>
