@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [switch]$NoZip,
-    [string]$VersionSuffix = ""
+    [string]$VersionSuffix
 )
 
 $ErrorActionPreference = "Stop"
@@ -29,12 +29,46 @@ function Get-ProjectVersion {
 
         [xml]$projXml = Get-Content $ProjFile
         $versionNode = $projXml.Project.PropertyGroup.VersionPrefix | Where-Object { $_ } | Select-Object -First 1
-
+		if (-not $VersionSuffix){	
+			
+			$VersionSuffix = $projXml.Project.PropertyGroup.VersionSuffix | Where-Object { $_ } | Select-Object -First 1
+			Write-Host "$VersionSuffix"		
+			
+		}
+		
         if (-not $versionNode) {
             throw "VersionPrefix not found in $ProjFile"
         }
-
+		
+		
         return $versionNode.Trim()
+    }
+    catch {
+        Write-Error "Failed to read version from project file: $_"
+        throw
+    }
+}
+
+function Get-VersionSuffix {
+    try {
+        if (-not (Test-Path $ProjFile)) {
+            throw "Project file not found: $ProjFile"
+        }        
+		
+		if ($VersionSuffix){
+			return $VersionSuffix
+		}
+		else {			
+			[xml]$projXml = Get-Content $ProjFile        
+			$versionSuffixNode = $projXml.Project.PropertyGroup.VersionSuffix | Where-Object { $_ } | Select-Object -First 1
+		}
+		
+        if (-not $versionSuffixNode) {
+            Write-Host "VersionPrefix not found in $ProjFile"
+        }
+		
+		$suffixTrim = $versionSuffixNode.Trim()
+        return "-$suffixTrim"
     }
     catch {
         Write-Error "Failed to read version from project file: $_"
@@ -80,7 +114,8 @@ try {
 
     # Get version
     $version = Get-ProjectVersion
-    $version = "$version$VersionSuffix"
+	$suffix  = Get-VersionSuffix
+    $version = "$version$suffix"
     Write-Host "Version: $version`n"
 
     # Array to store ZIP creation jobs
