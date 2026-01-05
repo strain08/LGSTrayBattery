@@ -16,8 +16,12 @@
     <VersionSuffix>dev-strain08</VersionSuffix>
     <AssemblyName>LGSTray</AssemblyName>
     <ApplicationIcon>Resources\logo_black.ico</ApplicationIcon>
+    <StartupObject>LGSTrayUI.Program</StartupObject>
   </PropertyGroup>
-
+	<ItemGroup>
+		<ApplicationDefinition Remove="App.xaml" />
+		<Page Include="App.xaml" />
+	</ItemGroup>
   <ItemGroup>
     <Content Include="Resources\logo_black.ico" />
   </ItemGroup>
