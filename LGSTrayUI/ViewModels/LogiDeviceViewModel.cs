@@ -85,6 +85,9 @@ public partial class LogiDeviceViewModel : LogiDevice, IDisposable
             case nameof(BatteryPercentage):
                 _cachedDetailedTooltip = null;
                 OnPropertyChanged(nameof(DetailedMenuTooltip));
+                //UpdateIconVisibility(); // IsOnline now drives visibility mostly
+                break;
+            case nameof(IsOnline):
                 UpdateIconVisibility();
                 break;
         }
@@ -97,7 +100,7 @@ public partial class LogiDeviceViewModel : LogiDevice, IDisposable
 
     public void UpdateIconVisibility()
     {
-        bool isOffline = BatteryPercentage < 0;
+        bool isOffline = !IsOnline;
         bool shouldShow = IsChecked && (!isOffline || _userSettings.KeepOfflineDevices);
 
         if (shouldShow)
@@ -137,7 +140,16 @@ public partial class LogiDeviceViewModel : LogiDevice, IDisposable
 
     public void UpdateState(UpdateMessage updateMessage)
     {
-        BatteryPercentage = updateMessage.batteryPercentage;
+        if (updateMessage.batteryPercentage >= 0)
+        {
+            IsOnline = true;
+            BatteryPercentage = updateMessage.batteryPercentage;
+        }
+        else
+        {
+            IsOnline = false;
+        }
+        
         PowerSupplyStatus = updateMessage.powerSupplyStatus;
         BatteryVoltage = updateMessage.batteryMVolt / 1000.0;
         BatteryMileage = updateMessage.Mileage;

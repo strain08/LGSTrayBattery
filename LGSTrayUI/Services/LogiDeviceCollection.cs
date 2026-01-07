@@ -332,7 +332,7 @@ public class LogiDeviceCollection : ILogiDeviceCollection,
     {
         DiagnosticLogger.Log($"Marking device offline - {device.DeviceId} ({device.DeviceName}) [Signature: {device.DeviceSignature}] - reason: {reason}");
 
-        device.BatteryPercentage = -1;
+        device.IsOnline = false;
         device.PowerSupplyStatus = PowerSupplyStatus.POWER_SUPPLY_STATUS_UNKNOWN;
         
         // Notify NotificationService about offline state

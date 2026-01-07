@@ -49,20 +49,28 @@ public static partial class BatteryIconDrawing
         _ => Mouse,
     };
 
-    private static Bitmap GetBatteryValue(LogiDevice device) => device.BatteryPercentage switch
+    private static Bitmap GetBatteryValue(LogiDevice device)
     {
-        < 0 => Missing,
-        < 10 => Resources.Indicator_10,
-        < 50 => Resources.Indicator_30,
-        < 85 => Resources.Indicator_50,
-        _ => Resources.Indicator_100
-    };
+        if (!device.IsOnline || device.BatteryPercentage < 0)
+        {
+            return Missing;
+        }
+
+        return device.BatteryPercentage switch
+        {
+            < 10 => Resources.Indicator_10,
+            < 50 => Resources.Indicator_30,
+            < 85 => Resources.Indicator_50,
+            _ => Resources.Indicator_100
+        };
+    }
 
     public static void DrawUnknown(TaskbarIcon taskbarIcon)
     {
         DrawIcon(taskbarIcon, new()
         {
             BatteryPercentage = -1,
+            IsOnline = false
         });
     }
 
@@ -202,7 +210,7 @@ public static partial class BatteryIconDrawing
             float emSize = height * 0.7f;
             //emSize = height * 0.7f;
             using Font font = new("Segoe UI Variable", emSize, fontStyle, GraphicsUnit.Pixel);
-            string text = (device.BatteryPercentage < 0) ? "?" : $"{device.BatteryPercentage:f0}";            
+            string text = (!device.IsOnline || device.BatteryPercentage < 0) ? "?" : $"{device.BatteryPercentage:f0}";            
 
             // Text Centering
             SizeF textSize = g.MeasureString(text, font);

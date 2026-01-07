@@ -79,7 +79,7 @@ public class LogiDeviceCollectionTests
 
         // Assert
         Assert.Single(collection.Devices);
-        Assert.Equal(-1, collection.Devices.First().BatteryPercentage);
+        Assert.False(collection.Devices.First().IsOnline);
     }
 
     [Fact]
@@ -112,9 +112,14 @@ public class LogiDeviceCollectionTests
         var dev2 = collection.Devices.FirstOrDefault(d => d.DeviceId == "dev002");
         var dev3 = collection.Devices.FirstOrDefault(d => d.DeviceId == "ABC123");
 
-        Assert.Equal(-1, dev1?.BatteryPercentage);
-        Assert.Equal(-1, dev2?.BatteryPercentage);
-        Assert.NotEqual(-1, dev3?.BatteryPercentage); // Native device should be untouched (default 0 or initialized value)
+        Assert.False(dev1?.IsOnline);
+        Assert.Equal(100, dev1?.BatteryPercentage); // Preserved
+        
+        Assert.False(dev2?.IsOnline);
+        Assert.Equal(100, dev2?.BatteryPercentage); // Preserved
+        
+        Assert.True(dev3?.IsOnline);
+        Assert.Equal(100, dev3?.BatteryPercentage); // Native device should be untouched
     }
 
     [Fact]

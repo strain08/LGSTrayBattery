@@ -47,6 +47,10 @@ public partial class LogiDevice : ObservableObject
     [NotifyPropertyChangedFor(nameof(ToolTipString))]
     private bool _isWiredMode = false;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ToolTipString))]
+    private bool _isOnline = false;
+
     public string ToolTipString
     {
         get
@@ -58,7 +62,7 @@ public partial class LogiDevice : ObservableObject
                 return $"{sourceText} {DeviceName}, Wired Mode (charging)";
             }
 
-            string statusText = BatteryPercentage < 0 ? "Offline" : $"{BatteryPercentage}%";
+            string statusText = !IsOnline ? "Offline" : $"{BatteryPercentage}%";
             string chargingText = PowerSupplyStatus == PowerSupplyStatus.POWER_SUPPLY_STATUS_CHARGING ? " (Charging)" : "";
             string sourceText2 = DataSource == DataSource.GHub ? " (G)" : "(N)";
 #if DEBUG
@@ -91,6 +95,7 @@ public partial class LogiDevice : ObservableObject
             $"<device_id>{DeviceId}</device_id>" +
             $"<device_name>{DeviceName}</device_name>" +
             $"<device_type>{DeviceType}</device_type>" +
+            $"<is_online>{IsOnline}</is_online>" +
             $"<battery_percent>{BatteryPercentage:f2}</battery_percent>" +
             $"<battery_voltage>{BatteryVoltage:f2}</battery_voltage>" +
             $"<mileage>{BatteryMileage:f2}</mileage>" +

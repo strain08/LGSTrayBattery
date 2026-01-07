@@ -8,7 +8,7 @@ enableRichToolTips = false
 
 [HTTPServer]
 # Enable built-in HTTP server for status and control
-enabled = false
+enabled = true
 
 addr = "localhost"
 port = 12321
@@ -17,7 +17,7 @@ useIpv6 = true
 [GHub]
 # Requires Logitech G-HUB to be installed and running
 # Could provide mileage on devices that support it
-enabled = false
+enabled = true
 
 [Native]
 # Enable HID++ 1.0 and 2.0 protocols, most compatible
