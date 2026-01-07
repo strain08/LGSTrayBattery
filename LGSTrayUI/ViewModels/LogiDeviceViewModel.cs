@@ -35,7 +35,6 @@ public class LogiDeviceViewModelFactory
 public partial class LogiDeviceViewModel : LogiDevice, IDisposable
 {
     private readonly ILogiDeviceIconFactory _logiDeviceIconFactory;
-    private readonly AppSettings _appSettings;
     private readonly UserSettingsWrapper _userSettings;
     private readonly PropertyChangedEventHandler _propertyChangedHandler;
 
@@ -54,7 +53,6 @@ public partial class LogiDeviceViewModel : LogiDevice, IDisposable
     public LogiDeviceViewModel(ILogiDeviceIconFactory logiDeviceIconFactory, AppSettings appSettings, UserSettingsWrapper userSettings)
     {
         _logiDeviceIconFactory = logiDeviceIconFactory;
-        _appSettings = appSettings;
         _userSettings = userSettings;
 
         // Subscribe to property changes from base class to update computed properties
@@ -149,7 +147,7 @@ public partial class LogiDeviceViewModel : LogiDevice, IDisposable
         {
             IsOnline = false;
         }
-        
+
         PowerSupplyStatus = updateMessage.powerSupplyStatus;
         BatteryVoltage = updateMessage.batteryMVolt / 1000.0;
         BatteryMileage = updateMessage.Mileage;
@@ -191,7 +189,7 @@ public partial class LogiDeviceViewModel : LogiDevice, IDisposable
                 sb.AppendLine($"Source: {DataSourceDisplayName}");
                 sb.AppendLine($"ID: {DeviceId}");
                 var wiredString = IsWiredMode ? "Wired" : "Wireless";
-                sb.AppendLine ($"Mode: {wiredString}");
+                sb.AppendLine($"Mode: {wiredString}");
 
                 // Show signature for debugging/troubleshooting
                 if (!string.IsNullOrEmpty(DeviceSignature))

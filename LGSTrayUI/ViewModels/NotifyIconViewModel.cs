@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LGSTrayCore.Interfaces;
 using LGSTrayPrimitives;
+using LGSTrayUI.IconDrawing;
 using LGSTrayUI.Services;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Win32;
@@ -131,7 +132,7 @@ public partial class NotifyIconViewModel : ObservableObject, IHostedService
         _settingsManager = settingsManager;
 
         FilteredDevices = CollectionViewSource.GetDefaultView(_logiDevices);
-        
+
         // Enable live filtering so devices appear/disappear when BatteryPercentage changes
         if (FilteredDevices is ICollectionViewLiveShaping liveShaping && liveShaping.CanChangeLiveFiltering)
         {
@@ -152,7 +153,7 @@ public partial class NotifyIconViewModel : ObservableObject, IHostedService
         if (item is LogiDeviceViewModel device)
         {
             // Assuming -1 indicates offline/unknown status as per LogiDevice.cs
-            return device.BatteryPercentage >= 0; 
+            return device.BatteryPercentage >= 0;
         }
 
         return true;

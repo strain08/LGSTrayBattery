@@ -5,6 +5,7 @@ using LGSTrayCore.Managers;
 using LGSTrayPrimitives;
 using LGSTrayPrimitives.Interfaces;
 using LGSTrayPrimitives.IPC;
+using LGSTrayUI.IconDrawing;
 using LGSTrayUI.Interfaces;
 using LGSTrayUI.Messages;
 using LGSTrayUI.Services;
@@ -251,7 +252,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         Microsoft.Win32.SystemEvents.PowerModeChanged -= AppExtensions_PowerModeChanged;
-       // AppDomain.CurrentDomain.UnhandledException -= CrashHandler;
+        // AppDomain.CurrentDomain.UnhandledException -= CrashHandler;
 
         // Close power notification window (cleans up WndProc hook and unregisters notifications)
         _powerWindow?.Close();
@@ -335,7 +336,7 @@ public partial class App : Application
                 string crashFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "LGSTrayUI_Crash.txt");
                 var sb = new System.Text.StringBuilder();
                 sb.AppendLine($"[{DateTime.Now}] CRASH OCCURRED");
-                
+
                 // Recursively log exceptions
                 Exception? currentEx = ex;
                 int depth = 0;
@@ -344,7 +345,7 @@ public partial class App : Application
                     string prefix = depth == 0 ? "Exception" : $"Inner Exception [{depth}]";
                     sb.AppendLine($"{prefix}: {currentEx.GetType().Name}: {currentEx.Message}");
                     sb.AppendLine($"Stack Trace:\n{currentEx.StackTrace}");
-                    
+
                     if (currentEx is AggregateException aggEx)
                     {
                         sb.AppendLine($"Flattened AggregateException Details:");
@@ -362,7 +363,7 @@ public partial class App : Application
                 sb.AppendLine("\nFull ToString():");
                 sb.AppendLine(ex.ToString());
                 sb.AppendLine("--------------------------------------------------");
-                
+
                 File.AppendAllText(crashFile, sb.ToString());
             }
         }

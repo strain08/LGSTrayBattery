@@ -3,7 +3,7 @@ using System.Globalization;
 using System.Windows.Data;
 using System.Windows.Media;
 
-namespace LGSTrayUI;
+namespace LGSTrayUI.Converters;
 /// <summary>
 /// Provides a value converter that returns a SolidColorBrush based on the application's theme and an optional
 /// parameter. Intended for use in data binding scenarios to select appropriate brush colors for light or dark themes.

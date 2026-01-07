@@ -38,7 +38,7 @@ public class SettingsManager : ISettingsManager
             table.WriteTo(writer);
             writer.Flush();
         }
-        catch (Exception ex) 
+        catch (Exception ex)
         {
             DiagnosticLogger.LogError("Failed to write settings to file: " + ex.StackTrace);
         }
@@ -63,7 +63,7 @@ public class SettingsManager : ISettingsManager
                         changed = true;
                     }
                 }
-                
+
             }
 
             if (changed)

@@ -1,6 +1,7 @@
 ﻿using Hardcodet.Wpf.TaskbarNotification;
 using LGSTrayCore;
 using LGSTrayPrimitives;
+using LGSTrayUI.IconDrawing;
 using LGSTrayUI.Interfaces;
 using LGSTrayUI.Services;
 using Microsoft.Extensions.Options;

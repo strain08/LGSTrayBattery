@@ -3,7 +3,7 @@ using System;
 using System.Threading;
 using System.Windows;
 
-namespace LGSTrayUI.Services;
+namespace LGSTrayUI.IconDrawing;
 
 /// <summary>
 /// Manages the application's main taskbar icon, automatically showing or hiding it based on the presence of device

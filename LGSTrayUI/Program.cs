@@ -7,14 +7,15 @@ namespace LGSTrayUI
     internal class Program
     {
         [STAThread]
-                        static void Main()
-                        {
-                            // TODO Whatever you want to do before starting
-                            // the WPF application and loading all WPF dlls
-                            try
-                            {
-                                RunApp();
-                            }            catch (Exception ex)
+        static void Main()
+        {
+            // TODO Whatever you want to do before starting
+            // the WPF application and loading all WPF dlls
+            try
+            {
+                RunApp();
+            }
+            catch (Exception ex)
             {
                 try
                 {
@@ -22,7 +23,7 @@ namespace LGSTrayUI
                     string crashFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"LGSTrayUI_Crash_{unixTime}.txt");
                     var sb = new System.Text.StringBuilder();
                     sb.AppendLine($"[{DateTime.Now}] STARTUP CRASH OCCURRED");
-                    
+
                     // Recursively log exceptions
                     Exception? currentEx = ex;
                     int depth = 0;
@@ -31,7 +32,7 @@ namespace LGSTrayUI
                         string prefix = depth == 0 ? "Exception" : $"Inner Exception [{depth}]";
                         sb.AppendLine($"{prefix}: {currentEx.GetType().Name}: {currentEx.Message}");
                         sb.AppendLine($"Stack Trace:\n{currentEx.StackTrace}");
-                        
+
                         if (currentEx is AggregateException aggEx)
                         {
                             sb.AppendLine($"Flattened AggregateException Details:");
@@ -49,7 +50,7 @@ namespace LGSTrayUI
                     sb.AppendLine("\nFull ToString():");
                     sb.AppendLine(ex.ToString());
                     sb.AppendLine("--------------------------------------------------");
-                    
+
                     File.AppendAllText(crashFile, sb.ToString());
                 }
                 catch

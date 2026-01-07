@@ -1,7 +1,7 @@
 ﻿using Hardcodet.Wpf.TaskbarNotification;
 using System.Windows;
 
-namespace LGSTrayUI;
+namespace LGSTrayUI.IconDrawing;
 /// <summary>
 /// Represents the application's main system tray icon, providing access to context menu actions and status display.
 /// </summary>

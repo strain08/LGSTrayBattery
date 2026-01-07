@@ -334,7 +334,7 @@ public class LogiDeviceCollection : ILogiDeviceCollection,
 
         device.IsOnline = false;
         device.PowerSupplyStatus = PowerSupplyStatus.POWER_SUPPLY_STATUS_UNKNOWN;
-        
+
         // Notify NotificationService about offline state
         _messenger.Send(new DeviceBatteryUpdatedMessage(device));
     }

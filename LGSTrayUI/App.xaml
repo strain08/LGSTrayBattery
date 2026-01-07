@@ -5,7 +5,7 @@
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="/Xaml/NotifyIconResources.xaml" />
+                <ResourceDictionary Source="/Views/NotifyIconResources.xaml" />
                 <!-- Fluent theme loaded conditionally in App.xaml.cs for Windows 11 compatibility -->
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
