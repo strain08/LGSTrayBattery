@@ -28,10 +28,8 @@ public partial class NotifyIconViewModel : ObservableObject, IHostedService
     private ObservableCollection<LogiDeviceViewModel> _logiDevices;
 
     private readonly UserSettingsWrapper _userSettings;
-    private readonly AppSettings _appSettings;
-    private readonly ISettingsManager _settingsManager;
 
-    public ICollectionView FilteredDevices { get; }
+    public ICollectionView FilteredDevices { get; init; }
 
     public bool KeepOfflineDevices
     {
@@ -51,11 +49,7 @@ public partial class NotifyIconViewModel : ObservableObject, IHostedService
 
     public bool NumericDisplay
     {
-        get
-        {
-            return _userSettings.NumericDisplay;
-        }
-
+        get => _userSettings.NumericDisplay;
         set
         {
             _userSettings.NumericDisplay = value;
@@ -63,13 +57,11 @@ public partial class NotifyIconViewModel : ObservableObject, IHostedService
         }
     }
 
-    public static string AssemblyVersion
-    {
-        get
-        {
-            return "v" + Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion?.Split('+')[0] ?? "Missing";
-        }
-    }
+    public static string AssemblyVersion => "v" + Assembly.GetEntryAssembly()?
+                                                          .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+                                                          .InformationalVersion?
+                                                          .Split('+')[0] ?? "Missing";
+        
 
     private const string AutoStartRegKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
     private const string AutoStartRegKeyValue = "LGSTrayGUI";
@@ -113,14 +105,10 @@ public partial class NotifyIconViewModel : ObservableObject, IHostedService
 
     private readonly IEnumerable<IDeviceManager> _deviceManagers;
 
-    public NotifyIconViewModel(
-        MainTaskbarIconWrapper mainTaskbarIconWrapper,
-        ILogiDeviceCollection logiDeviceCollection,
-        UserSettingsWrapper userSettings,
-        IEnumerable<IDeviceManager> deviceManagers,
-        AppSettings appSettings,
-        ISettingsManager settingsManager
-    )
+    public NotifyIconViewModel(MainTaskbarIconWrapper mainTaskbarIconWrapper,
+                               ILogiDeviceCollection logiDeviceCollection,
+                               UserSettingsWrapper userSettings,
+                               IEnumerable<IDeviceManager> deviceManagers)
     {
         _mainTaskbarIconWrapper = mainTaskbarIconWrapper;
         ((ContextMenu)Application.Current.FindResource("SysTrayMenu")).DataContext = this;
@@ -128,8 +116,6 @@ public partial class NotifyIconViewModel : ObservableObject, IHostedService
         _logiDevices = (logiDeviceCollection as LogiDeviceCollection)!.Devices;
         _userSettings = userSettings;
         _deviceManagers = deviceManagers;
-        _appSettings = appSettings;
-        _settingsManager = settingsManager;
 
         FilteredDevices = CollectionViewSource.GetDefaultView(_logiDevices);
 
