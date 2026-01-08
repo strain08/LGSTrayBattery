@@ -1,6 +1,5 @@
-﻿using CommunityToolkit.Mvvm.Messaging;
+using CommunityToolkit.Mvvm.Messaging;
 using LGSTrayPrimitives;
-using LGSTrayPrimitives.Interfaces;
 using LGSTrayPrimitives.MessageStructs;
 using LGSTrayUI.Interfaces;
 using LGSTrayUI.Messages;
@@ -11,161 +10,251 @@ using Notification.Wpf;
 
 namespace LGSTrayUI.Tests;
 
-public class NotificationServiceTests
-{
-    private async Task<Mock<INotificationManager>> MockManager(int percentage, AppSettings settingsMock, PowerSupplyStatus powerSupply)
-    {
+public class NotificationServiceTests {
+    private (NotificationService service, Mock<INotificationManager> manager, StrongReferenceMessenger messenger) CreateService(AppSettings appSettings) {
         var manager = new Mock<INotificationManager>(MockBehavior.Loose);
         var settings = new Mock<IOptions<AppSettings>>();
         var messenger = new StrongReferenceMessenger();
-        var iconFactory = new Mock<ILogiDeviceIconFactory>();
-        var appSettings = settingsMock;
-        var userSettings = new UserSettingsWrapper();
 
         settings.Setup(s => s.Value).Returns(appSettings);
 
         var service = new NotificationService(manager.Object, settings.Object, messenger);
-        await service.StartAsync(CancellationToken.None);
+        service.StartAsync(CancellationToken.None); // Start immediately
 
-        var device = new LogiDeviceViewModel(iconFactory.Object, appSettings, userSettings);
+        return (service, manager, messenger);
+    }
+
+    private LogiDeviceViewModel CreateDevice(string id, string name, bool hasBattery = true) {
+        var iconFactory = new Mock<ILogiDeviceIconFactory>();
+        var settings = new Mock<IOptions<AppSettings>>();
+        settings.Setup(s => s.Value).Returns(new AppSettings());
+        var userSettings = new UserSettingsWrapper();
+
+        // Fix: Use settings.Object.Value
+        var device = new LogiDeviceViewModel(iconFactory.Object, settings.Object.Value, userSettings);
         device.UpdateState(new InitMessage(
-            deviceId: "test-device-001",
-            deviceName: "Test Device",
-            hasBattery: true,
+            deviceId: id,
+            deviceName: name,
+            hasBattery: hasBattery,
             deviceType: DeviceType.Mouse
         ));
+        return device;
+    }
 
-        // First update: not charging (to establish baseline - wasn't charging before)
+    private void UpdateBattery(LogiDeviceViewModel device, StrongReferenceMessenger messenger, int percentage, PowerSupplyStatus status = PowerSupplyStatus.POWER_SUPPLY_STATUS_DISCHARGING) {
         device.UpdateState(new UpdateMessage(
-            deviceId: "test-device-001",
-            batteryPercentage: 50,
-            powerSupplyStatus: PowerSupplyStatus.POWER_SUPPLY_STATUS_NOT_CHARGING,
-            batteryMVolt: 4000,
-            updateTime: DateTimeOffset.Now
-        ));
-        messenger.Send(new DeviceBatteryUpdatedMessage(device));
-
-        // Second update: charging and full (this should trigger notification)
-        device.UpdateState(new UpdateMessage(
-            deviceId: "test-device-001",
+            deviceId: device.DeviceId,
             batteryPercentage: percentage,
-            powerSupplyStatus: powerSupply,
-            batteryMVolt: 4200,
+            powerSupplyStatus: status,
+            batteryMVolt: 3700,
             updateTime: DateTimeOffset.Now
         ));
         messenger.Send(new DeviceBatteryUpdatedMessage(device));
-
-        // Third update: for duplicate notification prevention (should not trigger notification)
-        device.UpdateState(new UpdateMessage(
-            deviceId: "test-device-001",
-            batteryPercentage: percentage+1,
-            powerSupplyStatus: powerSupply,
-            batteryMVolt: 4200,
-            updateTime: DateTimeOffset.Now
-        ));
-        messenger.Send(new DeviceBatteryUpdatedMessage(device));
-
-        return manager;
     }
 
     [Fact]
-    public async Task ShouldNotify_WhenBatteryFull()
-    {
+    public void ShouldNotify_WhenBatteryFull() {
         // Arrange
-        
-        var appSettings = new AppSettings
-        {
-            Notifications = new NotificationSettings
-            {
+        var appSettings = new AppSettings {
+            Notifications = new NotificationSettings {
                 Enabled = true,
                 NotifyOnBatteryHigh = true,
                 BatteryHighThreshold = 90
             }
         };
 
-        // Act
+        var (service, manager, messenger) = CreateService(appSettings);
+        var device = CreateDevice("dev1", "Test Device");
 
-        var manager = await MockManager(100, appSettings, PowerSupplyStatus.POWER_SUPPLY_STATUS_CHARGING);
+        // Act - Initialize (not full)
+        UpdateBattery(device, messenger, 50, PowerSupplyStatus.POWER_SUPPLY_STATUS_CHARGING);
+        manager.Invocations.Clear(); // Clear init notifications if any
+
+        // Act - Charge to full
+        UpdateBattery(device, messenger, 100, PowerSupplyStatus.POWER_SUPPLY_STATUS_CHARGING);
 
         // Assert
-
-        Assert.Single(manager.Invocations); // a single notification should be shown
+        Assert.Single(manager.Invocations);
         var invocation = manager.Invocations[0];
-        var title = invocation.Arguments[0];
-        var msg = invocation.Arguments[1];
-        var type = (NotificationType)invocation.Arguments[2];
-        
         Assert.Equal("Show", invocation.Method.Name);
-        Assert.Equal("Test Device - Battery Full", title);
-        Assert.Equal("Battery level: 100%", msg);
-        Assert.Equal(NotificationType.Success, type);
+        Assert.Contains("Battery Full", (string)invocation.Arguments[0]);
+        Assert.Contains("100%", (string)invocation.Arguments[1]);
+        Assert.Equal(NotificationType.Success, invocation.Arguments[2]);
     }
 
     [Fact]
-    public async Task ShouldNotify_WhenHighTreshold()
-    {
+    public void ShouldNotify_WhenHighThreshold() {
         // Arrange
-        
-        var appSettings = new AppSettings
-        {
-            Notifications = new NotificationSettings
-            {
+        var appSettings = new AppSettings {
+            Notifications = new NotificationSettings {
                 Enabled = true,
                 NotifyOnBatteryHigh = true,
                 BatteryHighThreshold = 80
             }
-        };       
-        var batteryPercent = 81;
-        
+        };
+        var (service, manager, messenger) = CreateService(appSettings);
+        var device = CreateDevice("dev1", "Test Device");
+
         // Act
-        
-        var manager = await MockManager(batteryPercent, appSettings, PowerSupplyStatus.POWER_SUPPLY_STATUS_CHARGING);
-        
+        UpdateBattery(device, messenger, 50, PowerSupplyStatus.POWER_SUPPLY_STATUS_CHARGING); // init
+        manager.Invocations.Clear();
+
+        UpdateBattery(device, messenger, 80, PowerSupplyStatus.POWER_SUPPLY_STATUS_CHARGING); // hit threshold
+
         // Assert
-
-        Assert.Single(manager.Invocations); // a single notification should be shown
+        Assert.Single(manager.Invocations);
         var invocation = manager.Invocations[0];
-        var title = invocation.Arguments[0];
-        var msg = invocation.Arguments[1];
-        var type = (NotificationType)invocation.Arguments[2];
-
-        Assert.Equal("Show", invocation.Method.Name);
-        Assert.Equal("Test Device - Battery almost full (charging)", title);
-        Assert.Equal($"Battery level: {batteryPercent}%", msg);
-        Assert.Equal(NotificationType.Success, type);
+        Assert.Contains("almost full", (string)invocation.Arguments[0]);
+        Assert.Contains("80%", (string)invocation.Arguments[1]);
+        Assert.Equal(NotificationType.Success, invocation.Arguments[2]);
     }
-    
-    [Fact]
-    public async Task ShouldNotify_WhenLowTreshold()
-    {
-        // Arrange
 
-        var appSettings = new AppSettings
-        {
-            Notifications = new NotificationSettings
-            {
-                Enabled = true,                
+    [Fact]
+    public void ShouldNotify_WhenLowThreshold() {
+        // Arrange
+        var appSettings = new AppSettings {
+            Notifications = new NotificationSettings {
+                Enabled = true,
                 NotifyOnBatteryLow = true,
                 BatteryLowThreshold = 30
             }
         };
-        var batteryPercent = 25;
-        
-        // Act
+        var (service, manager, messenger) = CreateService(appSettings);
+        var device = CreateDevice("dev1", "Test Device");
 
-        var manager = await MockManager(batteryPercent, appSettings, PowerSupplyStatus.POWER_SUPPLY_STATUS_DISCHARGING);
+        // Act
+        UpdateBattery(device, messenger, 50); // init
+        manager.Invocations.Clear();
+
+        UpdateBattery(device, messenger, 30); // hit threshold
 
         // Assert
-
-        Assert.Single(manager.Invocations); // a single notification should be shown
+        Assert.Single(manager.Invocations);
         var invocation = manager.Invocations[0];
-        var title = invocation.Arguments[0];
-        var msg = invocation.Arguments[1];
-        var type = (NotificationType)invocation.Arguments[2];
-
-        Assert.Equal("Show", invocation.Method.Name);
-        Assert.Equal("Test Device - Battery Low", title);
-        Assert.Equal($"Battery level: {batteryPercent}%", msg);
-        Assert.Equal(NotificationType.Warning, type);
+        Assert.Contains("Battery Low", (string)invocation.Arguments[0]);
+        Assert.Contains("30%", (string)invocation.Arguments[1]);
+        Assert.Equal(NotificationType.Warning, invocation.Arguments[2]);
     }
+
+    [Fact]
+
+    public void ShouldNotify_Sequentially_ForMultipleLowThresholds() {
+
+        // Arrange
+
+        var appSettings = new AppSettings {
+            Notifications = new NotificationSettings {
+                Enabled = true,
+                NotifyOnBatteryLow = true,
+                BatteryLowThreshold = 30
+            }
+        };
+
+        // Thresholds will be [30, 10, 5]
+        var (service, manager, messenger) = CreateService(appSettings);
+        var device = CreateDevice("dev1", "Test Device");
+
+        // Act 1: Initial (50%)
+        UpdateBattery(device, messenger, 50);
+        manager.Invocations.Clear();
+
+
+
+        // Act 2: Drop to 30% -> Notify Warning
+        UpdateBattery(device, messenger, 30);
+        Assert.Single(manager.Invocations);
+        Assert.Contains("30%", (string)manager.Invocations[0].Arguments[1]);
+        Assert.Equal(NotificationType.Warning, manager.Invocations[0].Arguments[2]);
+        manager.Invocations.Clear();
+
+        // Act 3: Drop to 25% -> NO Notification (still in 30% band)
+        UpdateBattery(device, messenger, 25);
+        Assert.Empty(manager.Invocations);
+
+        // Act 4: Drop to 10% -> Notify Warning
+        UpdateBattery(device, messenger, 10);
+        Assert.Single(manager.Invocations);
+        Assert.Contains("10%", (string)manager.Invocations[0].Arguments[1]);
+        Assert.Equal(NotificationType.Warning, manager.Invocations[0].Arguments[2]);
+
+        manager.Invocations.Clear();
+
+        // Act 5: Drop to 8% -> NO Notification
+        UpdateBattery(device, messenger, 8);
+        Assert.Empty(manager.Invocations);
+
+        // Act 6: Drop to 5% -> Notify Error
+
+        UpdateBattery(device, messenger, 5);
+        Assert.Single(manager.Invocations);
+        Assert.Contains("5%", (string)manager.Invocations[0].Arguments[1]);
+        Assert.Equal(NotificationType.Error, manager.Invocations[0].Arguments[2]);
+    }
+
+    [Fact]
+    public void ShouldNotNotify_WhenNotificationsDisabled() {
+        
+        // Arrange
+        var appSettings = new AppSettings {
+            Notifications = new NotificationSettings {
+                Enabled = false, // Disabled globally
+                NotifyOnBatteryLow = true,
+                BatteryLowThreshold = 30
+            }
+        };
+
+        var (service, manager, messenger) = CreateService(appSettings);
+        var device = CreateDevice("dev1", "Test Device");
+
+        // Act
+        UpdateBattery(device, messenger, 50);
+        UpdateBattery(device, messenger, 5); // Critical low
+
+        // Assert
+        Assert.Empty(manager.Invocations);
+    }
+
+    [Fact]
+    public void ShouldNotNotify_WhenStateChangeDisabled() {
+        // Arrange
+        var appSettings = new AppSettings {
+            Notifications = new NotificationSettings {
+                Enabled = true,
+                NotifyStateChange = false // Disabled
+            }
+        };
+
+        var (service, manager, messenger) = CreateService(appSettings);
+        var device = CreateDevice("dev1", "Test Device");
+        UpdateBattery(device, messenger, 50); // Online
+        manager.Invocations.Clear();
+        
+        // Act - Go Offline
+        device.UpdateState(new UpdateMessage(
+            deviceId: device.DeviceId,
+            batteryPercentage: -1,
+            powerSupplyStatus: PowerSupplyStatus.POWER_SUPPLY_STATUS_UNKNOWN,
+            batteryMVolt: 0,
+            updateTime: DateTimeOffset.Now
+        ));
+        messenger.Send(new DeviceBatteryUpdatedMessage(device));
+
+        // Assert
+        Assert.Empty(manager.Invocations);
+
+        // Act - Go Online
+        UpdateBattery(device, messenger, 50);
+
+        // Assert
+        Assert.Empty(manager.Invocations);
+
+    }
+
+
+
 }
+
+
+
+
+

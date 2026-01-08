@@ -18,6 +18,7 @@ internal class DeviceState
 {   public int? LastNotifiedThreshold { get; set; }
     public bool WasCharging { get; set; } = false;
     public bool WasOnline { get; set; } = false;
+    public int LastBatteryPercentage { get; set; }
     public CancellationTokenSource? PendingOfflineNotification { get; set; }
 }
 public class NotificationService : IHostedService,
@@ -181,14 +182,16 @@ public class NotificationService : IHostedService,
         // If device is offline, skip battery notification logic
         if (!isOnline)
         {
+            state.LastBatteryPercentage = batteryPercent;
             return;
         }
 
         // Check if we need to show battery almost full notification
-        if (isCharging && _notificationSettings.NotifyOnBatteryHigh && batteryPercent < 100)
+        if (isCharging && _notificationSettings.Enabled && _notificationSettings.NotifyOnBatteryHigh && batteryPercent < 100)
         {
-            // Show notification if battery reached threshold and wasn't charging before
-            if (!state.WasCharging && batteryPercent >= _notificationSettings.BatteryHighThreshold)
+            // Show notification if battery reached threshold and wasn't charging before OR crossed threshold
+            if (batteryPercent >= _notificationSettings.BatteryHighThreshold && 
+                (!state.WasCharging || state.LastBatteryPercentage < _notificationSettings.BatteryHighThreshold))
             {
                 ShowBatteryChargedNotification(deviceName, batteryPercent);
             }
@@ -198,18 +201,16 @@ public class NotificationService : IHostedService,
         // _notificationSettings.Enabled check is redundant (service will not be loaded if false) but keeps logic clear
         if (isCharging && _notificationSettings.Enabled)
         {
-            // Check if this is a charging state transition (wasn't charging before)
-            var wasCharging = state.WasCharging;
-
-            // Show notification if battery reached threshold and wasn't charging before
-            if (!wasCharging && batteryPercent == 100)
+            // Show notification if battery reached threshold and wasn't charging before OR crossed threshold
+            if (batteryPercent == 100 && (!state.WasCharging || state.LastBatteryPercentage < 100))
             {
                 ShowBatteryChargedNotification(deviceName, batteryPercent);
             }
         }
 
-        // Update charging state tracking
+        // Update charging state tracking and battery percentage
         state.WasCharging = isCharging;
+        state.LastBatteryPercentage = batteryPercent;
 
         // If device is charging, skip low battery logic
         if (isCharging)
@@ -218,14 +219,15 @@ public class NotificationService : IHostedService,
         }
 
         // Low battery notification logic
-        if (!_notificationSettings.NotifyOnBatteryLow)
+        if (!_notificationSettings.Enabled || !_notificationSettings.NotifyOnBatteryLow)
         {
             return;
         }
 
         // Find the highest threshold that the battery is below
         int? currentThreshold = null;
-        foreach (var threshold in GetBatteryLowThresholds())
+        // Sort thresholds ascending so we find the lowest matching threshold (e.g. 4 <= 5)
+        foreach (var threshold in GetBatteryLowThresholds().OrderBy(t => t))
         {
             if (batteryPercent <= threshold)
             {
