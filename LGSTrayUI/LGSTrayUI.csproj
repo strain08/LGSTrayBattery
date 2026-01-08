@@ -44,6 +44,7 @@
     <PackageReference Include="Microsoft.Windows.CsWin32" Version="0.3.264">
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="MQTTnet" Version="5.0.1.1416" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="Notification.Wpf" Version="8.0.0" />
     <PackageReference Include="System.Management" Version="10.0.1" />

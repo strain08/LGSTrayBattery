@@ -15,6 +15,8 @@ public class AppSettings
     public LoggingSettings Logging { get; set; } = null!;
 
     public BackoffSettings Backoff { get; set; } = new();
+
+    public MQTTSettings MQTT { get; set; } = null!;
 }
 
 public class UISettings
@@ -297,4 +299,64 @@ public class BackoffProfile
         Multiplier = 2.0,           // Standard exponential backoff
         MaxAttempts = 3             // Quick retry (3 attempts total: ~9s max)
     };
+}
+
+public class MQTTSettings
+{
+    /// <summary>
+    /// Enable MQTT publishing for Home Assistant integration
+    /// </summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// MQTT broker address (hostname or IP)
+    /// </summary>
+    public string BrokerAddress { get; set; } = "localhost";
+
+    /// <summary>
+    /// MQTT broker port (default: 1883 for non-TLS, 8883 for TLS)
+    /// </summary>
+    public int Port { get; set; } = 1883;
+
+    /// <summary>
+    /// MQTT username (leave empty for anonymous)
+    /// </summary>
+    public string Username { get; set; } = string.Empty;
+
+    /// <summary>
+    /// MQTT password (leave empty for anonymous)
+    /// </summary>
+    public string Password { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Topic prefix for Home Assistant discovery (default: homeassistant)
+    /// </summary>
+    public string TopicPrefix { get; set; } = "homeassistant";
+
+    /// <summary>
+    /// Minimum interval between publishes for the same device (seconds)
+    /// Prevents message spam when battery updates rapidly
+    /// </summary>
+    public int PublishThrottleSeconds { get; set; } = 60;
+
+    /// <summary>
+    /// Enable TLS/SSL for broker connection
+    /// </summary>
+    public bool UseTLS { get; set; } = false;
+
+    /// <summary>
+    /// Show toast notifications for MQTT connection status changes
+    /// </summary>
+    public bool NotifyConnectionStatus { get; set; } = true;
+
+    /// <summary>
+    /// Client ID for MQTT connection (default: LGSTrayBattery_{hostname})
+    /// Leave empty to auto-generate
+    /// </summary>
+    public string ClientId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Retain messages on MQTT broker (recommended for Home Assistant)
+    /// </summary>
+    public bool RetainMessages { get; set; } = true;
 }

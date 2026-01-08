@@ -17,7 +17,7 @@ useIpv6 = true
 [GHub]
 # Requires Logitech G-HUB to be installed and running
 # Could provide mileage on devices that support it
-enabled = true
+enabled = false
 
 [Native]
 # Enable HID++ 1.0 and 2.0 protocols, most compatible
@@ -144,3 +144,38 @@ initialTimeoutMs = 500     # 100ms - timeout for first attempt
 maxTimeoutMs = 1000        # 1s - maximum timeout cap
 multiplier = 1.5           # Exponential multiplier (doubling)
 maxAttempts = 5            # Multiple quick attempts
+
+[MQTT]
+# Enable MQTT integration with Home Assistant
+# When enabled, battery status is published to MQTT broker with auto-discovery support
+enabled = true
+
+# MQTT broker connection settings
+brokerAddress = "localhost"   # Broker hostname or IP address
+port = 1883                   # Default MQTT port (1883 for non-TLS, 8883 for TLS)
+username = ""                 # Leave empty for anonymous connection
+password = ""                 # Leave empty for anonymous connection
+
+# Enable TLS/SSL encryption for MQTT connection (port 8883 recommended)
+useTLS = false
+
+# Home Assistant MQTT discovery settings
+# Topic prefix for discovery messages (default: homeassistant)
+# Discovery topics will be: {topicPrefix}/sensor/{device_id}/battery/config
+topicPrefix = "homeassistant"
+
+# Retain messages on broker (recommended for Home Assistant auto-discovery)
+# Retained messages are delivered to new subscribers immediately
+retainMessages = true
+
+# Client ID (leave empty to auto-generate as LGSTrayBattery_{hostname})
+clientId = ""
+
+# Publish throttling settings
+# Minimum seconds between publishes for same device (prevents spam)
+# Recommended: 60 seconds for battery updates
+publishThrottleSeconds = 60
+
+# Show toast notifications for MQTT connection failures/successes
+# Helps diagnose connection issues during setup
+notifyConnectionStatus = true

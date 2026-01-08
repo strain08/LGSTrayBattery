@@ -150,6 +150,13 @@ public partial class App : Application
             builder.Services.AddHostedService<NotificationService>();
         }
 
+        // Register MQTT service for Home Assistant integration
+        if (appSettings.MQTT.Enabled)
+        {
+            builder.Services.AddHostedService<MQTTService>();
+            DiagnosticLogger.Log("MQTT service enabled");
+        }
+
         var host = builder.Build();
         _host = host; // Store host reference for wake handler
 
