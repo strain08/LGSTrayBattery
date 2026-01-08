@@ -137,7 +137,8 @@ public class LogiDeviceCollectionTests
         // Add duplicate signatures and empty strings
         settings.SelectedSignatures.Add("GHUB.dev001");
         settings.SelectedSignatures.Add("GHUB.dev001"); // duplicate
-        settings.SelectedSignatures.Add(""); // empty
+        settings.SelectedSignatures.Add("  "); // empty
+        settings.SelectedSignatures.Add("  "); // empty
         settings.SelectedSignatures.Add("NATIVE.ABC123");
         settings.SelectedSignatures.Add(null!); // null
 
