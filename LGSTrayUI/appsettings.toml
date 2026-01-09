@@ -8,7 +8,7 @@ enableRichToolTips = false
 
 [HTTPServer]
 # Enable built-in HTTP server for status and control
-enabled = false
+enabled = true
 
 addr = "localhost"
 port = 12321
@@ -17,12 +17,19 @@ useIpv6 = true
 [GHub]
 # Requires Logitech G-HUB to be installed and running
 # Could provide mileage on devices that support it
-enabled = false
+enabled = true
 
 [Native]
 # Enable HID++ 1.0 and 2.0 protocols, most compatible
 # Also works with most G series devices
 enabled = true
+
+# HID++ protocol software identifier, used for matching commands with responses
+# CRITICAL for multi-user multi-instance scenarios: Each user MUST configure a different value
+# Recommended: User 1 = 1, User 2 = 2, User 3 = 3, etc.
+# May require tweaking in case it clashes with other Logi apps (devices not detected, wrong battery value, etc.)
+# Valid range: 1-15, default: 10
+softwareId = 10
 
 # Time in seconds to next device poll on sucess
 # Pooling will automatically disabled when device is event-capable

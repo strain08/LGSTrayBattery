@@ -84,7 +84,20 @@ public partial class App : Application
         IConfiguration config = builder.Configuration;
         var appSettings = config.Get<AppSettings>()!;
 
-        // STEP 2: Determine logging settings (config + CLI overrides)
+        // STEP 2: Validate HID++ Software ID (must happen before daemon spawning)
+        if (appSettings.Native.Enabled && !appSettings.Native.IsSoftwareIdValid())
+        {
+            MessageBox.Show(
+                appSettings.Native.GetSoftwareIdErrorMessage(),
+                "LGSTray - Invalid Configuration",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error
+            );
+            Shutdown();
+            return;
+        }
+
+        // STEP 3: Determine logging settings (config + CLI overrides)
         bool enableLogging = appSettings.Logging?.Enabled ?? false;
         bool enableVerbose = appSettings.Logging?.Verbose ?? false;
 

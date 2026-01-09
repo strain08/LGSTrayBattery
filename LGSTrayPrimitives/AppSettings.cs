@@ -52,6 +52,41 @@ public class NativeDeviceManagerSettings : GHubManagerSettings
     public int PollPeriod { get; set; } = 600;
 
     /// <summary>
+    /// HID++ protocol software identifier (1-15, default: 10).
+    /// Used to distinguish responses from different applications accessing the same device.
+    /// CRITICAL for multi-user/multi-instance scenarios - each instance MUST use a unique value.
+    /// Valid range: 1-15 (0 is reserved for device events).
+    /// Invalid values are automatically clamped to valid range.
+    /// </summary>
+    public int SoftwareId { get; set; } = 10;
+
+    /// <summary>
+    /// Minimum valid software ID (HID++ 2.0 spec: 0x00 reserved for device events)
+    /// </summary>
+    public const int MinValidSoftwareId = 1;
+
+    /// <summary>
+    /// Maximum valid software ID (HID++ 2.0 spec: 4-bit field, 0x0F max)
+    /// </summary>
+    public const int MaxValidSoftwareId = 15;
+
+    /// <summary>
+    /// Validates the configured software ID.
+    /// </summary>
+    /// <returns>True if valid (1-15), false otherwise</returns>
+    public bool IsSoftwareIdValid() => SoftwareId >= MinValidSoftwareId && SoftwareId <= MaxValidSoftwareId;
+
+    /// <summary>
+    /// Gets a user-friendly error message for invalid software ID.
+    /// </summary>
+    public string GetSoftwareIdErrorMessage()
+    {
+        return $"Invalid HID++ Software ID: {SoftwareId}\n\n" +
+               $"Valid softwareId is between {MinValidSoftwareId} and {MaxValidSoftwareId}.\n" +
+               $"Please change appsettings.toml softwareId setting and restart.";
+    }
+
+    /// <summary>
     /// Enable battery event-driven updates (default: true).
     /// When enabled, devices send unsolicited battery updates on state changes.
     /// Polling continues to run in parallel for validation and fallback.

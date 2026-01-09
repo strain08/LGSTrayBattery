@@ -1,7 +1,9 @@
-﻿using EmbedIO;
+﻿using CommunityToolkit.Mvvm.Messaging;
+using EmbedIO;
 using EmbedIO.Net;
 using EmbedIO.WebApi;
 using LGSTrayPrimitives;
+using LGSTrayPrimitives.Messages;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
@@ -13,23 +15,36 @@ public class HttpServer : IHostedService, IDisposable
 
     private readonly AppSettings _appSettings;
     private readonly HttpControllerFactory _httpControllerFactory;
+    private readonly IMessenger _messenger;
 
     private CancellationTokenSource _serverCts = null!;
     private WebServer _server = null!;
 
-    public HttpServer(IOptions<AppSettings> appSettings, HttpControllerFactory httpControllerFactory)
+    public HttpServer(IOptions<AppSettings> appSettings, HttpControllerFactory httpControllerFactory, IMessenger messenger)
     {
         _appSettings = appSettings.Value;
         _httpControllerFactory = httpControllerFactory;
+        _messenger = messenger;
     }
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
         _serverCts = new();
         _server = CreateServer(_appSettings, _httpControllerFactory);
-        _server.RunAsync(_serverCts.Token);
+        try
+        {
+            await _server.RunAsync(_serverCts.Token);
+        }
+        catch (Exception ex)
+        {
+            // Common error: port already in use (HttpListenerException, SocketException)
+            string errorMessage = ex.InnerException?.Message ?? ex.Message;
 
-        return Task.CompletedTask;
+            DiagnosticLogger.LogError($"HTTP Server failed to start on port {_appSettings.HTTPServer.Port}: {errorMessage}");
+
+            // Notify UI about the error
+            _messenger.Send(new HttpServerErrorMessage(errorMessage, _appSettings.HTTPServer.Port));
+        }
     }
 
     public Task StopAsync(CancellationToken cancellationToken)

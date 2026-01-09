@@ -45,7 +45,7 @@ public static class ServiceCollectionExtensions
             return;
         }
 
-        DiagnosticLogger.Log($"Starting {managerName}");
+        DiagnosticLogger.Log($"{managerName} enabled.");
         services.AddSingleton<T>();
         services.AddSingleton<IDeviceManager>(p => p.GetRequiredService<T>());
         services.AddSingleton<IHostedService>(p => p.GetRequiredService<T>());

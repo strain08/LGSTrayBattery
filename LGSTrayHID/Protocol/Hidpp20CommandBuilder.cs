@@ -46,14 +46,13 @@ public readonly struct Hidpp20CommandBuilder
 
     /// <summary>
     /// Set the function ID (upper nibble of byte 3).
-    /// The software ID is automatically set to the default value.
+    /// The software ID is automatically set from GlobalSettings.SoftwareId (configured in appsettings.toml).
     /// </summary>
     /// <param name="functionId">Function ID (0x00-0x0F)</param>
-    /// <param name="softwareId">Software ID for request correlation (default: 0x0A)</param>
     /// <returns>Builder instance for method chaining</returns>
-    public Hidpp20CommandBuilder WithFunction(byte functionId, byte softwareId = HidppSoftwareId.DEFAULT)
+    public Hidpp20CommandBuilder WithFunction(byte functionId)
     {
-        _buffer[3] = (byte)((functionId << 4) | (softwareId & 0x0F));
+        _buffer[3] = (byte)((functionId << 4) | (GlobalSettings.SoftwareId & 0x0F));
         return this;
     }
 

@@ -1,4 +1,5 @@
-﻿using LGSTrayPrimitives;
+﻿using LGSTrayHID.Protocol;
+using LGSTrayPrimitives;
 using LGSTrayPrimitives.IPC;
 using LGSTrayPrimitives.Retry;
 using Microsoft.Extensions.Configuration;
@@ -12,6 +13,12 @@ namespace LGSTrayHID;
 internal static class GlobalSettings
 {
     public static NativeDeviceManagerSettings settings = new();
+
+    /// <summary>
+    /// Validated HID++ software ID (1-15).
+    /// Set during application startup after validation.
+    /// </summary>
+    public static byte SoftwareId { get; set; } = HidppSoftwareId.DEFAULT;
 
     // Backoff strategies for retry operations
     public static BackoffStrategy InitBackoff { get; set; } = BackoffProfile.DefaultInit.ToStrategy();
@@ -52,6 +59,21 @@ internal class Program
 
         GlobalSettings.settings = builder.Configuration.GetSection("Native")
             .Get<NativeDeviceManagerSettings>() ?? GlobalSettings.settings;
+
+        // Validate and set software ID
+        try
+        {
+            GlobalSettings.SoftwareId = HidppSoftwareId.ValidateAndConvert(GlobalSettings.settings.SoftwareId);
+            DiagnosticLogger.Log($"Using HID++ software ID: {GlobalSettings.SoftwareId} (0x{GlobalSettings.SoftwareId:X2})");
+        }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            string errorMessage = $"FATAL: Invalid HID++ software ID configuration.\n\n{ex.Message}\n\nApplication will now exit.";
+            DiagnosticLogger.LogError(errorMessage);
+            Console.Error.WriteLine(errorMessage);
+            Environment.Exit(1);
+            return; // Unreachable, but satisfies compiler
+        }
 
         // Load backoff settings
         var backoffSettings = builder.Configuration.GetSection("Backoff").Get<BackoffSettings>() ?? new BackoffSettings();
