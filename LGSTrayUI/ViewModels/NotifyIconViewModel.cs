@@ -123,28 +123,6 @@ public partial class NotifyIconViewModel : ObservableObject, IHostedService
         _deviceManagers = deviceManagers;
         _messenger = messenger;
 
-        // Register to receive HTTP server error messages
-        _messenger.Register<HttpServerErrorMessage>(this, (recipient, message) =>
-        {
-            Application.Current.Dispatcher.Invoke(() =>
-            {
-                MessageBox.Show(
-                    $"LGSTray failed to start HTTP server on port {message.Port}.\n\n" +
-                    $"Error: {message.ErrorMessage}\n\n" +
-                    $"The port may be in use by another application or user.\n\n" +
-                    $"To fix this:\n" +
-                    $"• Close other applications using port {message.Port}\n" +
-                    $"• OR configure a different port in appsettings.toml [HTTPServer] section\n" +
-                    $"• OR disable the HTTP server (enabled = false)\n\n" +
-                    $"Note: The application will close.",
-                    "LGSTray - HTTP Server Error",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error
-                );
-                Application.Current.Shutdown();
-            });
-        });
-
         FilteredDevices = CollectionViewSource.GetDefaultView(_logiDevices);
 
         // Enable live filtering so devices appear/disappear when BatteryPercentage changes

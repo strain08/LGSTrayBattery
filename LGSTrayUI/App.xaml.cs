@@ -78,23 +78,21 @@ public partial class App : Application
 
         EnableEfficiencyMode();
 
-        // Load configuration 
+        // STEP 1: Load configuration with validation service
+        var validationService = new ConfigurationValidationService(); // Early instantiation before DI
         var builder = Host.CreateEmptyApplicationBuilder(null);
-        await LoadAppSettings(builder.Configuration);
+        if (!await LoadAppSettings(builder.Configuration, validationService))
+        {
+            Shutdown();
+            return;
+        }
         IConfiguration config = builder.Configuration;
         var appSettings = config.Get<AppSettings>()!;
 
         // STEP 2: Validate HID++ Software ID (must happen before daemon spawning)
-        if (appSettings.Native.Enabled && !appSettings.Native.IsSoftwareIdValid())
+        if (!validationService.ValidateAndEnforceSoftwareId(appSettings))
         {
-            MessageBox.Show(
-                appSettings.Native.GetSoftwareIdErrorMessage(),
-                "LGSTray - Invalid Configuration",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error
-            );
-            Shutdown();
-            return;
+            return; // Service already handled error display and shutdown
         }
 
         // STEP 3: Determine logging settings (config + CLI overrides)
@@ -140,10 +138,11 @@ public partial class App : Application
         builder.Services.AddSingleton<IMessenger>(WeakReferenceMessenger.Default);
 
         // IPC, Settings
-        builder.Services.AddLGSMessagePipe(true);        
+        builder.Services.AddLGSMessagePipe(true);
         builder.Services.AddSingleton<UserSettingsWrapper>();
-        builder.Services.AddSingleton<ISettingsManager, SettingsManager>();
-        
+        builder.Services.AddSingleton<ISettingsManager, TomlSettingsManager>();
+        builder.Services.AddSingleton<IConfigurationValidationService, ConfigurationValidationService>();
+
         // Managers
         builder.Services.AddDeviceManager<LGSTrayHIDManager>(builder.Configuration);
         builder.Services.AddDeviceManager<GHubManager>(builder.Configuration);
@@ -287,56 +286,9 @@ public partial class App : Application
         base.OnExit(e);
     }
 
-    static async Task LoadAppSettings(ConfigurationManager config)
+    static async Task<bool> LoadAppSettings(ConfigurationManager config, IConfigurationValidationService validationService)
     {
-        try
-        {
-            config.AddTomlFile(Path.Combine(AppContext.BaseDirectory, "appsettings.toml"));
-        }
-        catch (Exception ex)
-        {
-            // Try to repair duplicate keys (common issue with legacy settings)
-            // Duplicate keys cause FormatException during TOML parsing
-            if (ex is FormatException)
-            {
-                try
-                {
-                    DiagnosticLogger.Log("Attempting to repair duplicate keys in appsettings.toml...");
-                    new SettingsManager().Repair();
-                    config.AddTomlFile(Path.Combine(AppContext.BaseDirectory, "appsettings.toml"));
-                    DiagnosticLogger.Log("Repair successful.");
-                    return;
-                }
-                catch (Exception repairEx)
-                {
-                    DiagnosticLogger.LogError($"Settings repair failed: {repairEx.Message}");
-                    // Fall through to user prompt
-                }
-            }
-
-            if (ex is FileNotFoundException || ex is InvalidDataException || ex is FormatException)
-            {
-                var msgBoxRet = MessageBox.Show(
-                    "Failed to read settings, do you want reset to default?",
-                    "LGSTray - Settings Load Error",
-                    MessageBoxButton.YesNo, MessageBoxImage.Error, MessageBoxResult.No
-                );
-
-                if (msgBoxRet == MessageBoxResult.Yes)
-                {
-                    await File.WriteAllBytesAsync(
-                        Path.Combine(AppContext.BaseDirectory, "appsettings.toml"),
-                        LGSTrayUI.Properties.Resources.defaultAppsettings
-                    );
-                }
-
-                config.AddTomlFile(Path.Combine(AppContext.BaseDirectory, "appsettings.toml"));
-            }
-            else
-            {
-                throw;
-            }
-        }
+        return await validationService.LoadAndValidateConfiguration(config);
     }
 
     private void CrashHandler(object sender, UnhandledExceptionEventArgs args)
