@@ -18,7 +18,7 @@ useIpv6 = true
 [GHub]
 # Requires Logitech G-HUB to be installed and running
 # Could provide mileage on devices that support it
-enabled = false
+enabled = true
 
 [Native]
 # Enable HID++ 1.0 and 2.0 protocols, most compatible
@@ -156,10 +156,10 @@ maxAttempts = 5            # Multiple quick attempts
 [MQTT]
 # Enable MQTT integration with Home Assistant
 # When enabled, battery status is published to MQTT broker with auto-discovery support
-enabled = false
+enabled = true
 
 # MQTT broker connection settings
-brokerAddress = "localhost"   # Broker hostname or IP address
+brokerAddress = "192.168.20.100"   # Broker hostname or IP address
 port = 1883                   # Default MQTT port (1883 for non-TLS, 8883 for TLS)
 username = ""                 # Leave empty for anonymous connection
 password = ""                 # Leave empty for anonymous connection
@@ -182,7 +182,7 @@ clientId = ""
 # Publish throttling settings
 # Minimum seconds between publishes for same device (prevents spam)
 # Recommended: 60 seconds for battery updates
-publishThrottleSeconds = 60
+publishThrottleSeconds = 0
 
 # Show toast notifications for MQTT connection failures/successes
 # Helps diagnose connection issues during setup
