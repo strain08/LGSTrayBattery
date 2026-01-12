@@ -154,7 +154,9 @@ public class NotificationService : IHostedService,
         var isOnline = device.IsOnline;
 
         DiagnosticLogger.Log($"Received battery update for device {deviceId}: {batteryPercent}%, Charging: {isCharging}");
-
+        
+        if (!_notificationSettings.Enabled) return;
+        
         // Get or create device state
         if (_deviceStates.TryGetValue(deviceId, out var state))
         {
@@ -187,7 +189,7 @@ public class NotificationService : IHostedService,
         }
 
         // Check if we need to show battery almost full notification
-        if (isCharging && _notificationSettings.Enabled && _notificationSettings.NotifyOnBatteryHigh && batteryPercent < 100)
+        if (isCharging && batteryPercent < 100 && _notificationSettings.NotifyOnBatteryHigh)
         {
             // Show notification if battery reached threshold and wasn't charging before OR crossed threshold
             if (batteryPercent >= _notificationSettings.BatteryHighThreshold && 
@@ -199,7 +201,7 @@ public class NotificationService : IHostedService,
 
         // Show battery fully charged notification if notifications enabled, even if NotifyOnBatteryHigh is disabled
         // _notificationSettings.Enabled check is redundant (service will not be loaded if false) but keeps logic clear
-        if (isCharging && _notificationSettings.Enabled)
+        if (isCharging)
         {
             // Show notification if battery reached threshold and wasn't charging before OR crossed threshold
             if (batteryPercent == 100 && (!state.WasCharging || state.LastBatteryPercentage < 100))
@@ -219,7 +221,7 @@ public class NotificationService : IHostedService,
         }
 
         // Low battery notification logic
-        if (!_notificationSettings.Enabled || !_notificationSettings.NotifyOnBatteryLow)
+        if (!_notificationSettings.NotifyOnBatteryLow)
         {
             return;
         }
