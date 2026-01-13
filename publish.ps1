@@ -29,18 +29,18 @@ function Get-ProjectVersion {
 
         [xml]$projXml = Get-Content $ProjFile
         $versionNode = $projXml.Project.PropertyGroup.VersionPrefix | Where-Object { $_ } | Select-Object -First 1
-		if (-not $VersionSuffix){	
-			
+		if (-not $VersionSuffix){
+
 			$VersionSuffix = $projXml.Project.PropertyGroup.VersionSuffix | Where-Object { $_ } | Select-Object -First 1
-			Write-Host "$VersionSuffix"		
-			
+			Write-Host "$VersionSuffix"
+
 		}
-		
+
         if (-not $versionNode) {
             throw "VersionPrefix not found in $ProjFile"
         }
-		
-		
+
+
         return $versionNode.Trim()
     }
     catch {
@@ -53,22 +53,25 @@ function Get-VersionSuffix {
     try {
         if (-not (Test-Path $ProjFile)) {
             throw "Project file not found: $ProjFile"
-        }        
-		
+        }
+
 		if ($VersionSuffix){
 			return $VersionSuffix
 		}
-		else {			
-			[xml]$projXml = Get-Content $ProjFile        
+		else {
+			[xml]$projXml = Get-Content $ProjFile
 			$versionSuffixNode = $projXml.Project.PropertyGroup.VersionSuffix | Where-Object { $_ } | Select-Object -First 1
 		}
-		
-        if (-not $versionSuffixNode) {
-            Write-Host "VersionPrefix not found in $ProjFile"
+
+        if ($versionSuffixNode){
+            $suffixTrim = $versionSuffixNode.Trim()
+            return "-$suffixTrim"
         }
-		
-		$suffixTrim = $versionSuffixNode.Trim()
-        return "-$suffixTrim"
+        else {
+            Write-Host "VersionSuffix not found in $ProjFile"
+            return ""
+        }
+
     }
     catch {
         Write-Error "Failed to read version from project file: $_"
