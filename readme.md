@@ -13,6 +13,7 @@ This fork continues development with bug fixes and new features.
 See included [settings file](https://github.com/strain08/LGSTrayBattery/blob/master/LGSTrayUI/appsettings.toml) for documentation.
 
 ## New Features
+- MQTT client, advertise to HA
 - Notifications for device on/off, battery level thresholds, configurable
 - Experimental support for monitoring devices that connect both wired and wireless
 - Ghub and Native devices: choose which source you want to use from devices menu
