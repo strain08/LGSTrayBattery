@@ -2,6 +2,7 @@
 using EmbedIO.Routing;
 using EmbedIO.WebApi;
 using LGSTrayCore.Interfaces;
+using LGSTrayPrimitives;
 using System.Reflection;
 
 namespace LGSTrayCore.HttpServer;
@@ -23,7 +24,9 @@ public class HttpControllerFactory
 
 public class HttpController : WebApiController
 {
-    private static readonly string _assemblyVersion = Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion!;
+    private static readonly string _assemblyVersion = Assembly.GetEntryAssembly()?
+                                                              .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+                                                              .InformationalVersion! + "-strain08";
     private readonly ILogiDeviceCollection _logiDeviceCollection;
 
     public HttpController(ILogiDeviceCollection logiDeviceCollection)
@@ -57,7 +60,8 @@ public class HttpController : WebApiController
         tw.Write("<br><b>By Device Name</b><br>");
         foreach (var logiDevice in _logiDeviceCollection.GetDevices())
         {
-            tw.Write($"<a href=\"/device/{Uri.EscapeDataString(logiDevice.DeviceName)}\">{logiDevice.DeviceName}</a><br>");
+            var source_prefix = logiDevice.DataSource == DataSource.Native ? "N-" : "G-";
+            tw.Write($"<a href=\"/device/{source_prefix + Uri.EscapeDataString(logiDevice.DeviceName)}\">{source_prefix + logiDevice.DeviceName}</a><br>");
         }
 
         tw.Write("<br><hr>");
@@ -71,7 +75,8 @@ public class HttpController : WebApiController
     public void GetDevice(string deviceIden)
     {
         var logiDevice = _logiDeviceCollection.GetDevices().FirstOrDefault(x => x.DeviceId == deviceIden);
-        logiDevice ??= _logiDeviceCollection.GetDevices().FirstOrDefault(x => x.DeviceName == deviceIden);
+        logiDevice ??= _logiDeviceCollection.GetDevices().FirstOrDefault(x => x.DeviceName == deviceIden[2..] && 
+                                                                              x.DataSource == (deviceIden[..2] == "N-" ? DataSource.Native:DataSource.GHub ));
 
         using var tw = HttpContext.OpenResponseText();
         if (logiDevice == null)
