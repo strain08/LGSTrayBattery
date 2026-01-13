@@ -47,6 +47,18 @@ public partial class LogiDevice : ObservableObject
     [NotifyPropertyChangedFor(nameof(ToolTipString))]
     private bool _isWiredMode = false;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ToolTipString))]
+    private bool _isOnline = false;
+
+    /// <summary>
+    /// Visual representation of online state with grace period for mode-switch detection.
+    /// Used exclusively for icon rendering to prevent "?" flicker during brief disconnections.
+    /// For notifications and logical state, use IsOnline instead.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isVisuallyOnline = false;
+
     public string ToolTipString
     {
         get
@@ -58,8 +70,8 @@ public partial class LogiDevice : ObservableObject
                 return $"{sourceText} {DeviceName}, Wired Mode (charging)";
             }
 
-            string statusText = BatteryPercentage < 0 ? "Offline" : $"{BatteryPercentage}%";
-            string chargingText = PowerSupplyStatus == PowerSupplyStatus.POWER_SUPPLY_STATUS_CHARGING ? " (Charging)" : "";
+            string statusText = !IsOnline ? "Offline" : $"{BatteryPercentage}%";
+            string chargingText = PowerSupplyStatus == PowerSupplyStatus.CHARGING ? " (Charging)" : "";
             string sourceText2 = DataSource == DataSource.GHub ? " (G)" : "(N)";
 #if DEBUG
             return $"{sourceText2} {DeviceName}{chargingText}, {statusText} - {LastUpdate}";
@@ -91,10 +103,11 @@ public partial class LogiDevice : ObservableObject
             $"<device_id>{DeviceId}</device_id>" +
             $"<device_name>{DeviceName}</device_name>" +
             $"<device_type>{DeviceType}</device_type>" +
+            $"<is_online>{IsOnline}</is_online>" +
             $"<battery_percent>{BatteryPercentage:f2}</battery_percent>" +
             $"<battery_voltage>{BatteryVoltage:f2}</battery_voltage>" +
             $"<mileage>{BatteryMileage:f2}</mileage>" +
-            $"<charging>{PowerSupplyStatus == PowerSupplyStatus.POWER_SUPPLY_STATUS_CHARGING}</charging>" +
+            $"<charging>{PowerSupplyStatus == PowerSupplyStatus.CHARGING}</charging>" +
             $"<last_update>{LastUpdate}</last_update>" +
             $"</xml>"
             ;

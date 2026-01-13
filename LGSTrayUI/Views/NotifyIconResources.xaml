@@ -1,0 +1,78 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:converters="clr-namespace:LGSTrayUI.Converters"
+                    xmlns:tb="http://www.hardcodet.net/taskbar"
+                    x:Class="LGSTrayUI.NotifyIconResources"
+                    x:ClassModifier="public">
+
+    <!-- Converters -->
+    <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+    <converters:DataSourceBadgeConverter x:Key="DataSourceBadgeConverter"/>
+    <converters:ThemeBrushConverter x:Key="ThemeBrushConverter" />
+    
+    <!-- Badge Styles -->
+    <Style x:Key="DataSourceBadge" TargetType="Border">
+        <Setter Property="Width" Value="18"/>
+        <Setter Property="Height" Value="18"/>
+        <Setter Property="CornerRadius" Value="9"/>
+        <Setter Property="Margin" Value="0,0,6,0"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="BadgeText" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="10"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="Foreground" Value="White"/>
+        <Setter Property="HorizontalAlignment" Value="Center"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+	    <ContextMenu x:Key="SysTrayMenu"
+	                 Opened="SysTrayMenu_Opened"
+	                 Closed="SysTrayMenu_Closed">
+	        <!-- Devices Menu -->
+	        <MenuItem Header="Devices" ItemsSource="{Binding FilteredDevices}">
+	            <MenuItem.ItemContainerStyle>
+	                <Style TargetType="MenuItem">
+	                    <Setter Property="IsCheckable" Value="True"/>
+	                    <Setter Property="IsChecked" Value="{Binding IsChecked}"/>
+	                    <Setter Property="StaysOpenOnClick" Value="True"/>
+	                    <Setter Property="Command">
+	                        <Setter.Value>
+	                            <Binding Path="DataContext.DeviceClickedCommand" RelativeSource="{RelativeSource AncestorType=ContextMenu}"/>
+	                        </Setter.Value>
+	                    </Setter>
+	                    <Setter Property="CommandParameter" Value="{Binding RelativeSource={RelativeSource Self}}" />
+	                </Style>
+	            </MenuItem.ItemContainerStyle>
+	            <MenuItem.ItemTemplate>
+	                <DataTemplate>
+	                    <StackPanel Orientation="Horizontal">
+	                        <!-- Badge Circle -->
+	                        <Border Style="{StaticResource DataSourceBadge}"
+	                                Background="{Binding DataSource, Converter={StaticResource DataSourceBadgeConverter}}">
+	                            <TextBlock Style="{StaticResource BadgeText}"
+	                                      Text="{Binding BadgeLetter}"/>
+	                        </Border>
+	
+	                        <!-- Device Name with Tooltip -->
+	                        <TextBlock Text="{Binding DeviceName}"
+	                                  VerticalAlignment="Center"
+	                                  ToolTip="{Binding DetailedMenuTooltip}"/>
+	                    </StackPanel>
+	                </DataTemplate>
+	            </MenuItem.ItemTemplate>
+	        </MenuItem>
+	
+	        <MenuItem Header="Rediscover Devices" Command="{Binding RediscoverDevicesCommand}" IsEnabled="{Binding RediscoverDevicesEnabled}"/>
+	        <MenuItem Header="Keep Offline Devices" IsCheckable="True" IsChecked="{Binding KeepOfflineDevices}" StaysOpenOnClick="True" />
+	        <MenuItem Header="Display Numeric Icon" IsCheckable="True" IsChecked="{Binding NumericDisplay}" StaysOpenOnClick="True" />        <MenuItem Header="Autostart with Windows" IsCheckable="True" IsChecked="{Binding AutoStart}" StaysOpenOnClick="True" />
+        <Separator />
+        <MenuItem Header="{Binding AssemblyVersion}" IsEnabled="False" />
+        <Separator />
+        <MenuItem Header="Exit" Command="{Binding ExitApplicationCommand}" />
+    </ContextMenu>
+	<!-- Systray Icon -->
+    <tb:TaskbarIcon x:Key="NotifyIcon" ContextMenu="{StaticResource SysTrayMenu}"/>
+
+</ResourceDictionary>

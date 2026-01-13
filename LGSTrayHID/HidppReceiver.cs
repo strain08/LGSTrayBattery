@@ -237,7 +237,7 @@ public class HidppReceiver : IDisposable
                 buffer,
                 matcher: response => (response.GetFeatureIndex() == buffer.GetFeatureIndex()) &&
                                      (response.GetDeviceIdx() == buffer.GetDeviceIdx()) &&
-                                     (response.GetSoftwareId() == HidppSoftwareId.DEFAULT),
+                                     (response.GetSoftwareId() == GlobalSettings.SoftwareId),
                 timeout: timeout,
                 earlyExit: ignoreHID10 ? null : response => response.IsError()
             );
@@ -259,7 +259,7 @@ public class HidppReceiver : IDisposable
                 buffer,
                 matcher: response => (response.GetFeatureIndex() == buffer.GetFeatureIndex()) &&
                                      (response.GetDeviceIdx() == buffer.GetDeviceIdx()) &&
-                                     (response.GetSoftwareId() == HidppSoftwareId.DEFAULT),
+                                     (response.GetSoftwareId() == GlobalSettings.SoftwareId),
                 timeout: (int)attempt.Timeout.TotalMilliseconds,
                 earlyExit: ignoreHID10 ? null : response => response.IsError()
             );
@@ -288,7 +288,7 @@ public class HidppReceiver : IDisposable
             command,
             matcher: response => (response.GetFeatureIndex() == 0x00) &&
                                  (response.GetDeviceIdx() == deviceId) &&
-                                 (response.GetSoftwareId() == HidppSoftwareId.DEFAULT) &&
+                                 (response.GetSoftwareId() == GlobalSettings.SoftwareId) &&
                                  (response.GetParam(2) == pingPayload),
             timeout: timeout,
             earlyExit: ignoreHIDPP10 ? null : response => response.IsError()

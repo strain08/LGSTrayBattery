@@ -1,5 +1,3 @@
-using LGSTrayUI.Services;
-
 namespace LGSTrayUI.Messages;
 
 /// <summary>

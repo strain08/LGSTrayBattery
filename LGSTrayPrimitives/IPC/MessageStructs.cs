@@ -77,9 +77,9 @@ public class RemoveMessage(string deviceId, string reason = "") : IPCMessage(dev
     public string reason = reason;
 }
 
-[MessagePackObject]
-public class BatteryUpdateRequestMessage()
-{
-    [Key(0)]
-    public int id;
-}
+//[MessagePackObject]
+//public class BatteryUpdateRequestMessage()
+//{
+//    [Key(0)]
+//    public int id;
+//}

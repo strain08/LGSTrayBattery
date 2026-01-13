@@ -9,7 +9,7 @@ using System.Drawing.Imaging;
 using System.Drawing.Text;
 using System.Runtime.InteropServices;
 
-namespace LGSTrayUI;
+namespace LGSTrayUI.IconDrawing;
 /// <summary>
 /// Provides static methods for drawing and updating battery and device icons for taskbar notifications.
 /// </summary>
@@ -49,20 +49,29 @@ public static partial class BatteryIconDrawing
         _ => Mouse,
     };
 
-    private static Bitmap GetBatteryValue(LogiDevice device) => device.BatteryPercentage switch
+    private static Bitmap GetBatteryValue(LogiDevice device)
     {
-        < 0 => Missing,
-        < 10 => Resources.Indicator_10,
-        < 50 => Resources.Indicator_30,
-        < 85 => Resources.Indicator_50,
-        _ => Resources.Indicator_100
-    };
+        if (!device.IsVisuallyOnline || device.BatteryPercentage < 0)
+        {
+            return Missing;
+        }
+
+        return device.BatteryPercentage switch
+        {
+            < 10 => Resources.Indicator_10,
+            < 50 => Resources.Indicator_30,
+            < 85 => Resources.Indicator_50,
+            _ => Resources.Indicator_100
+        };
+    }
 
     public static void DrawUnknown(TaskbarIcon taskbarIcon)
     {
         DrawIcon(taskbarIcon, new()
         {
             BatteryPercentage = -1,
+            IsOnline = false,
+            IsVisuallyOnline = false
         });
     }
 
@@ -94,7 +103,7 @@ public static partial class BatteryIconDrawing
         }
 
         // Overlay charging indicator if device is charging
-        if (device.PowerSupplyStatus == PowerSupplyStatus.POWER_SUPPLY_STATUS_CHARGING)
+        if (device.PowerSupplyStatus == PowerSupplyStatus.CHARGING)
         {
             // Use theme-appropriate charging icon
             Bitmap chargingOverlay = Charging;
@@ -163,9 +172,9 @@ public static partial class BatteryIconDrawing
             g.InterpolationMode = InterpolationMode.HighQualityBicubic;
             g.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
-            
-            bool isCharging = device.PowerSupplyStatus == PowerSupplyStatus.POWER_SUPPLY_STATUS_CHARGING;
-            
+
+            bool isCharging = device.PowerSupplyStatus == PowerSupplyStatus.CHARGING;
+
             // Background Logic
             //if (isCharging)
             //{
@@ -202,7 +211,7 @@ public static partial class BatteryIconDrawing
             float emSize = height * 0.7f;
             //emSize = height * 0.7f;
             using Font font = new("Segoe UI Variable", emSize, fontStyle, GraphicsUnit.Pixel);
-            string text = (device.BatteryPercentage < 0) ? "?" : $"{device.BatteryPercentage:f0}";            
+            string text = (!device.IsVisuallyOnline || device.BatteryPercentage < 0) ? "?" : $"{device.BatteryPercentage:f0}";
 
             // Text Centering
             SizeF textSize = g.MeasureString(text, font);
@@ -210,7 +219,7 @@ public static partial class BatteryIconDrawing
             float y = (height - textSize.Height) / 2;
 
             // Fine-tune adjustment            
-            y += 1 * dpiScale;            
+            y += 1 * dpiScale;
 
             using Brush textBrush = new SolidBrush(textColor);
             g.DrawString(text, font, textBrush, x, y);
@@ -228,6 +237,6 @@ public static partial class BatteryIconDrawing
         // Cleanup
         DestroyIcon(iconHandle);
         oldIcon?.Dispose();
-    }  
+    }
 
 }

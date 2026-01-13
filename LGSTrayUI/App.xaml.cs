@@ -5,13 +5,14 @@ using LGSTrayCore.Managers;
 using LGSTrayPrimitives;
 using LGSTrayPrimitives.Interfaces;
 using LGSTrayPrimitives.IPC;
+using LGSTrayUI.Extensions;
+using LGSTrayUI.IconDrawing;
 using LGSTrayUI.Interfaces;
 using LGSTrayUI.Messages;
 using LGSTrayUI.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Notification.Wpf;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -20,8 +21,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using Tommy.Extensions.Configuration;
-using static LGSTrayUI.AppExtensions;
+using static LGSTrayUI.Extensions.AppExtensions;
 
 namespace LGSTrayUI;
 
@@ -73,17 +73,28 @@ public partial class App : Application
         Thread.CurrentThread.CurrentCulture = CultureInfo.InvariantCulture;
         CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
         AppDomain.CurrentDomain.UnhandledException += new UnhandledExceptionEventHandler(CrashHandler);
-        Microsoft.Win32.SystemEvents.PowerModeChanged += AppExtensions_PowerModeChanged
-            ;
+        Microsoft.Win32.SystemEvents.PowerModeChanged += AppExtensions_PowerModeChanged;
+
         EnableEfficiencyMode();
 
-        // Load configuration 
+        // STEP 1: Load configuration with validation service
+        var validationService = new ConfigurationValidationService(); // Early instantiation before DI
         var builder = Host.CreateEmptyApplicationBuilder(null);
-        await LoadAppSettings(builder.Configuration);
+        if (!await LoadAppSettings(builder.Configuration, validationService))
+        {
+            Shutdown();
+            return;
+        }
         IConfiguration config = builder.Configuration;
         var appSettings = config.Get<AppSettings>()!;
 
-        // STEP 2: Determine logging settings (config + CLI overrides)
+        // STEP 2: Validate HID++ Software ID (must happen before daemon spawning)
+        if (!validationService.ValidateAndEnforceSoftwareId(appSettings))
+        {
+            return; // Service already handled error display and shutdown
+        }
+
+        // STEP 3: Determine logging settings (config + CLI overrides)
         bool enableLogging = appSettings.Logging?.Enabled ?? false;
         bool enableVerbose = appSettings.Logging?.Verbose ?? false;
 
@@ -109,7 +120,7 @@ public partial class App : Application
         // Initialize logging
         DiagnosticLogger.Initialize(enableLogging, enableVerbose);
         DiagnosticLogger.ResetLog();
-        DiagnosticLogger.Log("Logging started.");
+        DiagnosticLogger.Log($"LGSTray {NotifyIconViewModel.AssemblyVersion} logging started.");
         if (enableVerbose)
         {
             DiagnosticLogger.Log("Verbose logging enabled.");
@@ -125,34 +136,38 @@ public partial class App : Application
         // Register WeakReferenceMessenger for intra-process messaging (power events, etc.)
         builder.Services.AddSingleton<IMessenger>(WeakReferenceMessenger.Default);
 
+        // IPC, Settings
         builder.Services.AddLGSMessagePipe(true);
-        builder.Services.AddWebSocketClientFactory();
         builder.Services.AddSingleton<UserSettingsWrapper>();
+        builder.Services.AddSingleton<ISettingsManager, TomlSettingsManager>();
+        builder.Services.AddSingleton<IConfigurationValidationService, ConfigurationValidationService>();
 
+        // Managers
+        builder.Services.AddDeviceManager<LGSTrayHIDManager>(builder.Configuration);
+        builder.Services.AddDeviceManager<GHubManager>(builder.Configuration);
+
+        // UI
+        builder.Services.AddSingleton<ILogiDeviceCollection, LogiDeviceCollection>();
         builder.Services.AddSingleton<ILogiDeviceIconFactory, LogiDeviceIconFactory>();
         builder.Services.AddSingleton<LogiDeviceViewModelFactory>();
         builder.Services.AddSingleton<IDispatcher, WpfDispatcher>();
-
-        builder.Services.AddWebserver(builder.Configuration);
-
-        builder.Services.AddIDeviceManager<LGSTrayHIDManager>(builder.Configuration);
-        builder.Services.AddIDeviceManager<GHubManager>(builder.Configuration);
-        builder.Services.AddSingleton<ILogiDeviceCollection, LogiDeviceCollection>();
-
-
         builder.Services.AddSingleton<MainTaskbarIconWrapper>();
         builder.Services.AddHostedService<NotifyIconViewModel>();
-        if (appSettings.Notifications.Enabled)
-        {
-            builder.Services.AddSingleton<INotificationManager, NotificationManager>();
-            builder.Services.AddHostedService<NotificationService>();
-        }
+
+        // Notifiers
+        builder.Services.AddWebSocketClientFactory();
+        builder.Services.AddWebserver(builder.Configuration);
+        builder.Services.AddMQTTClient(builder.Configuration);
+        builder.Services.AddNotifications(builder.Configuration);
 
         var host = builder.Build();
         _host = host; // Store host reference for wake handler
 
         // Get messenger from DI
         var messenger = host.Services.GetRequiredService<IMessenger>();
+
+        // Ensure ConfigurationValidationService is instantiated to listen for startup errors
+        host.Services.GetRequiredService<IConfigurationValidationService>();
 
         // Create hidden window for Modern Standby power notifications
         // This works on both S3 (traditional sleep) and S0 (Modern Standby) systems
@@ -250,7 +265,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         Microsoft.Win32.SystemEvents.PowerModeChanged -= AppExtensions_PowerModeChanged;
-        AppDomain.CurrentDomain.UnhandledException -= CrashHandler;
+        // AppDomain.CurrentDomain.UnhandledException -= CrashHandler;
 
         // Close power notification window (cleans up WndProc hook and unregisters notifications)
         _powerWindow?.Close();
@@ -273,46 +288,55 @@ public partial class App : Application
         base.OnExit(e);
     }
 
-    static async Task LoadAppSettings(Microsoft.Extensions.Configuration.ConfigurationManager config)
+    static async Task<bool> LoadAppSettings(ConfigurationManager config, IConfigurationValidationService validationService)
     {
-        try
-        {
-            config.AddTomlFile(Path.Combine(AppContext.BaseDirectory, "appsettings.toml"));
-        }
-        catch (Exception ex)
-        {
-            if (ex is FileNotFoundException || ex is InvalidDataException)
-            {
-                var msgBoxRet = MessageBox.Show(
-                    "Failed to read settings, do you want reset to default?",
-                    "LGSTray - Settings Load Error",
-                    MessageBoxButton.YesNo, MessageBoxImage.Error, MessageBoxResult.No
-                );
-
-                if (msgBoxRet == MessageBoxResult.Yes)
-                {
-                    await File.WriteAllBytesAsync(
-                        Path.Combine(AppContext.BaseDirectory, "appsettings.toml"),
-                        LGSTrayUI.Properties.Resources.defaultAppsettings
-                    );
-                }
-
-                config.AddTomlFile(Path.Combine(AppContext.BaseDirectory, "appsettings.toml"));
-            }
-            else
-            {
-                throw;
-            }
-        }
+        return await validationService.LoadAndValidateConfiguration(config);
     }
 
     private void CrashHandler(object sender, UnhandledExceptionEventArgs args)
     {
-        Exception e = (Exception)args.ExceptionObject;
-        long unixTime = DateTimeOffset.Now.ToUnixTimeSeconds();
+        try
+        {
+            if (args.ExceptionObject is Exception ex)
+            {
+                string crashFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "LGSTrayUI_Crash.txt");
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine($"[{DateTime.Now}] CRASH OCCURRED");
 
-        using StreamWriter writer = new($"./crashlog_{unixTime}.log", false);
-        writer.WriteLine(e.ToString());
+                // Recursively log exceptions
+                Exception? currentEx = ex;
+                int depth = 0;
+                while (currentEx != null)
+                {
+                    string prefix = depth == 0 ? "Exception" : $"Inner Exception [{depth}]";
+                    sb.AppendLine($"{prefix}: {currentEx.GetType().Name}: {currentEx.Message}");
+                    sb.AppendLine($"Stack Trace:\n{currentEx.StackTrace}");
+
+                    if (currentEx is AggregateException aggEx)
+                    {
+                        sb.AppendLine($"Flattened AggregateException Details:");
+                        foreach (var inner in aggEx.Flatten().InnerExceptions)
+                        {
+                            sb.AppendLine($"- {inner.GetType().Name}: {inner.Message}");
+                        }
+                    }
+
+                    currentEx = currentEx.InnerException;
+                    depth++;
+                    if (currentEx != null) sb.AppendLine();
+                }
+
+                sb.AppendLine("\nFull ToString():");
+                sb.AppendLine(ex.ToString());
+                sb.AppendLine("--------------------------------------------------");
+
+                File.AppendAllText(crashFile, sb.ToString());
+            }
+        }
+        catch
+        {
+            // If logging fails, there's not much we can do.
+        }
     }
 
     /// <summary>

@@ -13,7 +13,8 @@ public static class ServiceCollectionExtensions
 {
     public static void AddWebserver(this IServiceCollection services, IConfiguration configs)
     {
-        var settings = configs.Get<AppSettings>()!;
+        var settings = configs.Get<AppSettings>() ?? throw new Exception("Settings null in ServiceCollectionExtensions !"); 
+
         if (!settings.HTTPServer.Enabled) return;
 
         services.AddSingleton<HttpControllerFactory>();
@@ -26,9 +27,10 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    public static void AddIDeviceManager<T>(this IServiceCollection services, IConfiguration configs) where T : class, IDeviceManager, IHostedService
+    public static void AddDeviceManager<T>(this IServiceCollection services, IConfiguration configs) where T : class, IDeviceManager, IHostedService
     {
-        var settings = configs.Get<AppSettings>()!;
+        var settings = configs.Get<AppSettings>() ?? throw new Exception("Settings null in ServiceCollectionExtensions !");
+
         string managerName = typeof(T).Name;
         bool isEnabled = typeof(T) switch
         {
@@ -43,7 +45,7 @@ public static class ServiceCollectionExtensions
             return;
         }
 
-        DiagnosticLogger.Log($"Starting {managerName}");
+        DiagnosticLogger.Log($"{managerName} enabled.");
         services.AddSingleton<T>();
         services.AddSingleton<IDeviceManager>(p => p.GetRequiredService<T>());
         services.AddSingleton<IHostedService>(p => p.GetRequiredService<T>());

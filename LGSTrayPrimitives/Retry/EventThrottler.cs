@@ -4,7 +4,7 @@ namespace LGSTrayHID.Battery;
 /// Prevents battery event spam by throttling events based on time intervals.
 /// Some devices send rapid bursts of battery events which need to be throttled.
 /// </summary>
-public class BatteryEventThrottler
+public class EventThrottler
 {
     private DateTimeOffset _lastEventTime = DateTimeOffset.MinValue;
     private readonly int _throttleMilliseconds;
@@ -13,9 +13,13 @@ public class BatteryEventThrottler
     /// Creates a new battery event throttler with the specified throttle window.
     /// </summary>
     /// <param name="throttleMilliseconds">Minimum time in milliseconds between events (default 500ms)</param>
-    public BatteryEventThrottler(int throttleMilliseconds = 500)
+    public EventThrottler(int throttleMilliseconds = 500)
     {
         _throttleMilliseconds = throttleMilliseconds;
+    }
+
+    public EventThrottler(TimeSpan timeSpan) {
+        _throttleMilliseconds = (int)timeSpan.TotalMilliseconds;
     }
 
     /// <summary>

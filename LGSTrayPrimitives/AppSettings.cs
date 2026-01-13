@@ -6,7 +6,7 @@ public class AppSettings
 
     public HttpServerSettings HTTPServer { get; set; } = null!;
 
-    public IDeviceManagerSettings GHub { get; set; } = null!;
+    public GHubManagerSettings GHub { get; set; } = null!;
 
     public NativeDeviceManagerSettings Native { get; set; } = null!;
 
@@ -15,17 +15,13 @@ public class AppSettings
     public LoggingSettings Logging { get; set; } = null!;
 
     public BackoffSettings Backoff { get; set; } = new();
+
+    public MQTTSettings MQTT { get; set; } = null!;
 }
 
 public class UISettings
 {
     public bool EnableRichToolTips { get; set; }
-
-    /// <summary>
-    /// Keep offline devices visible in tray menu (marked with BatteryPercentage = -1).
-    /// When false (default), devices are removed from menu when disconnected.
-    /// </summary>
-    public bool KeepOfflineDevices { get; set; } = false;
 }
 
 public class HttpServerSettings
@@ -45,15 +41,50 @@ public class HttpServerSettings
     public string UrlPrefix => $"http://{Addr}:{Port}";
 }
 
-public class IDeviceManagerSettings
+public class GHubManagerSettings
 {
     public bool Enabled { get; set; }
 }
 
-public class NativeDeviceManagerSettings : IDeviceManagerSettings
+public class NativeDeviceManagerSettings : GHubManagerSettings
 {
     public int RetryTime { get; set; } = 10;
     public int PollPeriod { get; set; } = 600;
+
+    /// <summary>
+    /// HID++ protocol software identifier (1-15, default: 10).
+    /// Used to distinguish responses from different applications accessing the same device.
+    /// CRITICAL for multi-user/multi-instance scenarios - each instance MUST use a unique value.
+    /// Valid range: 1-15 (0 is reserved for device events).
+    /// Invalid values are automatically clamped to valid range.
+    /// </summary>
+    public int SoftwareId { get; set; } = 10;
+
+    /// <summary>
+    /// Minimum valid software ID (HID++ 2.0 spec: 0x00 reserved for device events)
+    /// </summary>
+    public const int MinValidSoftwareId = 1;
+
+    /// <summary>
+    /// Maximum valid software ID (HID++ 2.0 spec: 4-bit field, 0x0F max)
+    /// </summary>
+    public const int MaxValidSoftwareId = 15;
+
+    /// <summary>
+    /// Validates the configured software ID.
+    /// </summary>
+    /// <returns>True if valid (1-15), false otherwise</returns>
+    public bool IsSoftwareIdValid() => SoftwareId >= MinValidSoftwareId && SoftwareId <= MaxValidSoftwareId;
+
+    /// <summary>
+    /// Gets a user-friendly error message for invalid software ID.
+    /// </summary>
+    public string GetSoftwareIdErrorMessage()
+    {
+        return $"Invalid HID++ Software ID: {SoftwareId}\n\n" +
+               $"Valid softwareId is between {MinValidSoftwareId} and {MaxValidSoftwareId}.\n" +
+               $"Please change appsettings.toml softwareId setting and restart.";
+    }
 
     /// <summary>
     /// Enable battery event-driven updates (default: true).
@@ -91,6 +122,29 @@ public class NotificationSettings
     public int BatteryLowThreshold { get; set; } = 30;
     public bool NotifyOnBatteryHigh { get; set; } = true;
     public int BatteryHighThreshold { get; set; } = 80;
+
+    /// <summary>
+    /// Suppress offline/online notification spam when devices switch between wired/wireless modes (default: true).
+    /// When enabled, offline notifications are delayed by ModeSwitchDetectionDelaySeconds.
+    /// If device comes back online within that window, both notifications are suppressed.
+    /// </summary>
+    public bool SuppressModeSwitchNotifications { get; set; } = true;
+
+    /// <summary>
+    /// Delay in seconds before showing offline notification (default: 3).
+    /// If device reconnects within this window, notifications are suppressed (mode switch detected).
+    /// Only applies when SuppressModeSwitchNotifications is enabled.
+    /// Recommended: 2-5 seconds for most devices.
+    /// </summary>
+    public int ModeSwitchDetectionDelaySeconds { get; set; } = 3;
+
+    /// <summary>
+    /// List of device names to apply mode switch suppression (default: empty = all devices).
+    /// If empty, suppression applies to all devices.
+    /// If specified, only listed devices will have suppressed notifications during mode switches.
+    /// Example: ["G502", "G915"]
+    /// </summary>
+    public IEnumerable<string> DevicesForModeSwitchSuppression { get; set; } = [];
 }
 
 public class LoggingSettings
@@ -280,4 +334,72 @@ public class BackoffProfile
         Multiplier = 2.0,           // Standard exponential backoff
         MaxAttempts = 3             // Quick retry (3 attempts total: ~9s max)
     };
+}
+
+public class MQTTSettings
+{
+    /// <summary>
+    /// Enable MQTT publishing for Home Assistant integration
+    /// </summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// MQTT broker address (hostname or IP)
+    /// </summary>
+    public string BrokerAddress { get; set; } = "localhost";
+
+    /// <summary>
+    /// MQTT broker port (default: 1883 for non-TLS, 8883 for TLS)
+    /// </summary>
+    public int Port { get; set; } = 1883;
+
+    /// <summary>
+    /// MQTT username (leave empty for anonymous)
+    /// </summary>
+    public string Username { get; set; } = string.Empty;
+
+    /// <summary>
+    /// MQTT password (leave empty for anonymous)
+    /// </summary>
+    public string Password { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Topic prefix for Home Assistant discovery (default: homeassistant)
+    /// </summary>
+    public string TopicPrefix { get; set; } = "homeassistant";
+
+    /// <summary>
+    /// Minimum interval between publishes for the same device (seconds)
+    /// Prevents message spam when battery updates rapidly
+    /// </summary>
+    public int PublishThrottleSeconds { get; set; } = 60;
+
+    /// <summary>
+    /// Enable TLS/SSL for broker connection
+    /// </summary>
+    public bool UseTLS { get; set; } = false;
+
+    /// <summary>
+    /// Show toast notifications for MQTT connection status changes
+    /// </summary>
+    public bool NotifyConnectionStatus { get; set; } = true;
+
+    /// <summary>
+    /// Client ID for MQTT connection (default: LGSTrayBattery_{hostname})
+    /// Leave empty to auto-generate
+    /// </summary>
+    public string ClientId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Retain messages on MQTT broker (recommended for Home Assistant)
+    /// </summary>
+    public bool RetainMessages { get; set; } = true;
+
+    /// <summary>
+    /// Publish device offline status to Home Assistant (default: false)
+    /// When enabled, devices are marked as "unavailable" in HA when they go offline,
+    /// which may hide their battery data in the UI.
+    /// When disabled, last known battery percentage remains visible even when device is offline.
+    /// </summary>
+    public bool PublishLWT { get; set; } = false;
 }

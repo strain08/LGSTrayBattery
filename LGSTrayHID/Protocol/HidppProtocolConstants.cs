@@ -1,3 +1,5 @@
+using LGSTrayPrimitives;
+
 namespace LGSTrayHID.Protocol;
 
 /// <summary>
@@ -203,6 +205,31 @@ public static class HidppSoftwareId
 {
     /// <summary>Default software ID used by this application (0x0A)</summary>
     public const byte DEFAULT = 0x0A;
+
+    /// <summary>
+    /// Validates a software ID and returns it as a byte if valid, otherwise throws an exception.
+    /// Uses validation from NativeDeviceManagerSettings.
+    /// </summary>
+    /// <param name="softwareId">Software ID value to validate</param>
+    /// <returns>Valid software ID as byte</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when software ID is outside valid range (1-15)</exception>
+    public static byte ValidateAndConvert(int softwareId)
+    {
+        if (softwareId < NativeDeviceManagerSettings.MinValidSoftwareId ||
+            softwareId > NativeDeviceManagerSettings.MaxValidSoftwareId)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(softwareId),
+                softwareId,
+                $"Software ID must be between {NativeDeviceManagerSettings.MinValidSoftwareId} and {NativeDeviceManagerSettings.MaxValidSoftwareId}. " +
+                $"Value 0 is reserved for device events. " +
+                $"Please configure a unique value (1-15) in appsettings.toml [Native] section. " +
+                $"In multi-user scenarios, each user MUST use a different software ID."
+            );
+        }
+
+        return (byte)softwareId;
+    }
 }
 
 /// <summary>

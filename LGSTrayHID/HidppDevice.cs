@@ -25,7 +25,7 @@ public class HidppDevice : IDisposable
 
     // Battery event tracking
     private byte _batteryFeatureIndex = 0xFF; // 0xFF = not set
-    private readonly BatteryEventThrottler _eventThrottler = new(500); // 500ms throttle window
+    private readonly EventThrottler _eventThrottler = new(500); // 500ms throttle window
     private readonly BatteryUpdatePublisher _batteryPublisher = new(); // Handles deduplication and IPC
     private bool _forceNextUpdate = false; // Force next battery update to bypass deduplication
 
