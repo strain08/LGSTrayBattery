@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.Messaging;
+using LGSTrayCore;
 using LGSTrayHID.Battery;
 using LGSTrayPrimitives;
 using LGSTrayPrimitives.Interfaces;
@@ -303,7 +304,7 @@ internal class MQTTService : IHostedService, IRecipient<DeviceBatteryUpdatedMess
     }
 
     // Discovery Publishing
-    private async Task PublishDiscoveryConfigAsync(LogiDeviceViewModel device)
+    private async Task PublishDiscoveryConfigAsync(LogiDevice device)
     {
         try
         {
@@ -447,7 +448,7 @@ internal class MQTTService : IHostedService, IRecipient<DeviceBatteryUpdatedMess
     }
 
     // State Publishing
-    private async Task PublishStateUpdateAsync(LogiDeviceViewModel device)
+    private async Task PublishStateUpdateAsync(LogiDevice device)
     {
         try
         {
