@@ -1,5 +1,4 @@
-﻿using CommunityToolkit.Mvvm.Messaging;
-using LGSTrayCore;
+﻿using LGSTrayCore;
 using LGSTrayCore.Interfaces;
 using LGSTrayPrimitives;
 using LGSTrayPrimitives.Interfaces;
@@ -22,7 +21,7 @@ public class LogiDeviceCollection : ILogiDeviceCollection
     private readonly LogiDeviceViewModelFactory _logiDeviceViewModelFactory;
     private readonly ISubscriber<IPCMessage> _subscriber;
     private readonly IDispatcher _dispatcher;
-    private readonly IMessenger _messenger;
+    private readonly IPublisher<DeviceBatteryUpdatedMessage> _batteryPublisher;
 
     // Runtime mapping: signature → current deviceId (for GHUB devices with changing IDs)
     private readonly Dictionary<string, string> _signatureToId = new();    
@@ -35,14 +34,14 @@ public class LogiDeviceCollection : ILogiDeviceCollection
         LogiDeviceViewModelFactory logiDeviceViewModelFactory,
         ISubscriber<IPCMessage> subscriber,
         IDispatcher dispatcher,
-        IMessenger messenger
+        IPublisher<DeviceBatteryUpdatedMessage> batteryPublisher
     )
     {
         _userSettings = userSettings;
         _logiDeviceViewModelFactory = logiDeviceViewModelFactory;
         _subscriber = subscriber;
         _dispatcher = dispatcher;
-        _messenger = messenger;
+        _batteryPublisher = batteryPublisher;
 
         _subscriber.Subscribe(x =>
         {
@@ -197,7 +196,7 @@ public class LogiDeviceCollection : ILogiDeviceCollection
 
             // Update device state and notify
             device.UpdateState(updateMessage);
-            _messenger.Send(new DeviceBatteryUpdatedMessage(device));
+            _batteryPublisher.Publish(new DeviceBatteryUpdatedMessage(device));
         });
     }
 
@@ -269,7 +268,7 @@ public class LogiDeviceCollection : ILogiDeviceCollection
         device.PowerSupplyStatus = PowerSupplyStatus.UNKNOWN;
 
         // Notify NotificationService about offline state
-        _messenger.Send(new DeviceBatteryUpdatedMessage(device));
+        _batteryPublisher.Publish(new DeviceBatteryUpdatedMessage(device));
     }
 
     /// <summary>

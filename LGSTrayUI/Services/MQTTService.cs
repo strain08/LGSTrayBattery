@@ -1,10 +1,10 @@
-using CommunityToolkit.Mvvm.Messaging;
 using LGSTrayCore;
 using LGSTrayHID.Battery;
 using LGSTrayPrimitives;
 using LGSTrayPrimitives.Interfaces;
 using LGSTrayPrimitives.Retry;
 using LGSTrayUI.Messages;
+using MessagePipe;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using MQTTnet;
@@ -16,14 +16,16 @@ using System.Threading.Tasks;
 
 namespace LGSTrayUI.Services;
 
-internal class MQTTService : IHostedService, IRecipient<DeviceBatteryUpdatedMessage>, IDisposable
+internal class MQTTService : IHostedService, IDisposable
 {
     // Dependencies
     private readonly MQTTSettings _mqttSettings;
     private readonly NotificationSettings _notificationSettings;
     private readonly INotificationManager? _notificationManager;
-    private readonly IMessenger _messenger;
     private readonly EventThrottler _eventThrottler = new(TimeSpan.FromSeconds(30)); // 30s throttle for connection error notifications
+    
+    private readonly ISubscriber<DeviceBatteryUpdatedMessage> _batterySubscriber;
+    private IDisposable? _subscription;
 
     // MQTT client
     private readonly IMqttClient _mqttClient;
@@ -41,13 +43,13 @@ internal class MQTTService : IHostedService, IRecipient<DeviceBatteryUpdatedMess
 
     public MQTTService(IOptions<AppSettings> appSettings,
                        INotificationManager? notificationManager,
-                       IMessenger messenger)
+                       ISubscriber<DeviceBatteryUpdatedMessage> batterySubscriber)
     {
         _mqttSettings = appSettings.Value.MQTT;
 
         _notificationSettings = appSettings.Value.Notifications;
         _notificationManager = notificationManager;
-        _messenger = messenger;
+        _batterySubscriber = batterySubscriber;
 
         _clientFactory = new MqttClientFactory();
         _mqttClient = _clientFactory.CreateMqttClient();
@@ -73,7 +75,7 @@ internal class MQTTService : IHostedService, IRecipient<DeviceBatteryUpdatedMess
         DiagnosticLogger.Log("[MQTT] Service starting...");
 
         // Subscribe to device battery updates
-        _messenger.Register<DeviceBatteryUpdatedMessage>(this);
+        _subscription = _batterySubscriber.Subscribe(Receive);
 
         // Start connection (fire-and-forget like GHubManager)
         _ = ConnectAsync();
@@ -86,7 +88,7 @@ internal class MQTTService : IHostedService, IRecipient<DeviceBatteryUpdatedMess
         DiagnosticLogger.Log("[MQTT] Service stopping...");
 
         // Unregister from messenger
-        _messenger.UnregisterAll(this);
+        _subscription?.Dispose();
 
         // Cancel reconnection attempts
         _reconnectCts?.Cancel();
