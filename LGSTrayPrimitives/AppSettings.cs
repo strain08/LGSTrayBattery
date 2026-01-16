@@ -399,10 +399,4 @@ public class MQTTSettings
     /// Retain messages on MQTT broker (recommended for Home Assistant)
     /// </summary>
     public bool RetainMessages { get; set; } = true;
-
-    /// <summary>
-    /// Uses MQTT LWT to set the Host Status sensor when app goes offline, system sleep, etc.
-    /// Devices and their battery levels will remain available.
-    /// </summary>
-    public bool PublishLWT { get; set; } = false;
 }

@@ -187,8 +187,3 @@ publishThrottleSeconds = 0
 
 # Show toast notifications for MQTT connection failures/successes
 notifyConnectionStatus = true
-
-# Uses MQTT LWT to set the Host Status sensor when app goes offline, system sleep, etc.
-# Devices and their battery levels will remain available.
-# (default: true)
-publishLWT = true

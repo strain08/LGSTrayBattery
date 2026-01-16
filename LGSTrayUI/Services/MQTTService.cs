@@ -172,7 +172,7 @@ internal class MQTTService : IHostedService, IDisposable
 
                 DiagnosticLogger.Log("[MQTT] Disconnecting from broker...");
                 // Use explicit timeout for disconnect - don't rely on cancellation token alone
-                // LWT will automatically mark devices as unavailable if PublishLWT is enabled
+                // LWT will automatically mark devices as unavailable
                 using var disconnectCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, disconnectCts.Token);
                 await _mqttClient.DisconnectAsync(cancellationToken: linkedCts.Token);
@@ -251,13 +251,12 @@ internal class MQTTService : IHostedService, IDisposable
 
                 // Add Last Will and Testament (LWT)
                 // This ensures HA marks devices as unavailable if the app crashes
-                if (_mqttSettings.PublishLWT) {
-                    var statusTopic = $"{_mqttSettings.TopicPrefix}/status";
-                    optionsBuilder.WithWillTopic(statusTopic)
-                                  .WithWillPayload("offline")
-                                  .WithWillRetain(true)
-                                  .WithWillQualityOfServiceLevel(MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce);
-                }
+                // Use host-specific status topic so multiple hosts don't override each other
+                var statusTopic = GetHostStatusTopic();
+                optionsBuilder.WithWillTopic(statusTopic)
+                              .WithWillPayload("offline")
+                              .WithWillRetain(true)
+                              .WithWillQualityOfServiceLevel(MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce);
 
                 var options = optionsBuilder.Build();
 
@@ -305,12 +304,12 @@ internal class MQTTService : IHostedService, IDisposable
         DiagnosticLogger.Log("[MQTT] Connection established");
         ShowConnectionNotification(true, null);
 
-        // Subscribe to Home Assistant birth message
-        var birthTopic = $"{_mqttSettings.TopicPrefix}/status";
+        // Subscribe to this host's status topic (for detecting reconnection/HA restart)
+        var birthTopic = GetHostStatusTopic();
         try
         {
             await _mqttClient.SubscribeAsync(birthTopic);
-            DiagnosticLogger.Log($"[MQTT] Subscribed to HA birth topic: {birthTopic}");
+            DiagnosticLogger.Log($"[MQTT] Subscribed to host status topic: {birthTopic}");
         }
         catch (Exception ex)
         {
@@ -321,10 +320,7 @@ internal class MQTTService : IHostedService, IDisposable
         _ = PublishServiceAvailabilityAsync(true);
 
         // Publish Host Device Discovery Config (if LWT enabled)
-        if (_mqttSettings.PublishLWT)
-        {
-            _ = PublishHostDiscoveryConfigAsync();
-        }
+        _ = PublishHostDiscoveryConfigAsync();
 
         // Clear published devices tracking to re-publish discovery configs
         lock (_publishLock)
@@ -361,8 +357,8 @@ internal class MQTTService : IHostedService, IDisposable
         var payloadBytes = e.ApplicationMessage.Payload.ToArray();
         var payload = System.Text.Encoding.UTF8.GetString(payloadBytes);
 
-        // Check if this is Home Assistant birth message
-        var birthTopic = $"{_mqttSettings.TopicPrefix}/status";
+        // Check if this is our host's status topic (for detecting reconnection)
+        var birthTopic = GetHostStatusTopic();
         if (topic == birthTopic && payload == "online")
         {
             DiagnosticLogger.Log("[MQTT] Home Assistant came online - triggering device republish");
@@ -625,11 +621,12 @@ internal class MQTTService : IHostedService, IDisposable
             };
 
             // Host Status Binary Sensor Config (Connectivity)
+            // Uses host-specific status topic so each host has independent connectivity status
             var hostStatusConfig = new Dictionary<string, object>
             {
                 ["name"] = "Host Status",
                 ["unique_id"] = $"lgstray_{deviceId}_host_status",
-                ["state_topic"] = $"{_mqttSettings.TopicPrefix}/status",
+                ["state_topic"] = GetHostStatusTopic(),
                 ["device_class"] = "connectivity",
                 ["payload_on"] = "online",
                 ["payload_off"] = "offline",
@@ -667,7 +664,7 @@ internal class MQTTService : IHostedService, IDisposable
     {
         try
         {
-            var topic = $"{_mqttSettings.TopicPrefix}/status";
+            var topic = GetHostStatusTopic();
             var payload = isOnline ? "online" : "offline";
 
             var message = new MqttApplicationMessageBuilder()
@@ -686,6 +683,16 @@ internal class MQTTService : IHostedService, IDisposable
     }
 
     // Helpers
+
+    /// <summary>
+    /// Gets the host-specific status topic for LWT and availability.
+    /// Format: {TopicPrefix}/host/{MachineName}/status
+    /// </summary>
+    private string GetHostStatusTopic()
+    {
+        var machineName = SanitizeForMqtt(Environment.MachineName);
+        return $"{_mqttSettings.TopicPrefix}/host/{machineName}/status";
+    }
 
     // Replace invalid MQTT topic characters
     private static string SanitizeForMqtt(string input) => input.Replace(" ", "_")
