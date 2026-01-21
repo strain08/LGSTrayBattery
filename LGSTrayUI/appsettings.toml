@@ -92,7 +92,7 @@ devicesForModeSwitchSuppression = []
 [Logging]
 # Enable diagnostic logging to diagnostic.log
 # Can be overridden by --log command-line flag
-enabled = true
+enabled = false
 
 # Enable verbose logging (+protocol messages)
 # Can be overridden by --verbose command-line flag
