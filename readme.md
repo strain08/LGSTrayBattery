@@ -29,8 +29,9 @@ Currently tested and working with:
 - ✅(Bolt) MX Anywhere 3S
 - ✅(Bolt) MX Master 3
 - ✅(Unifying) M330 Silent
+- ✅(Lightspeed) G Pro X 2 Mouse
 - ✅(Lightspeed) G305 Mouse
-- ✅(Lightspeed) G705 Mouse
+- ✅(Lightspeed) G705 Mouse 
 - 🟨(Lightspeed) G515 TKL (after closing https://github.com/strain08/LGSTrayBattery/issues/3)
 
 ## OS Compatibility
